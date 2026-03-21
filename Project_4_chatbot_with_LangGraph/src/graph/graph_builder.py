@@ -1,9 +1,7 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-import streamlit as st
 from langgraph.graph import StateGraph, START, END
-from IPython.display import Image, display
 from src.state.state import State
 from src.nodes.basic_chatbot_node import BasicChatbotNode
 
@@ -56,9 +54,6 @@ class GraphBuilder:
             # Compile graph
             graph = self.graph_builder.compile()
             logging.info("Graph compiled successfully")
-
-            with st.sidebar:
-                display(Image(graph.get_graph().draw_mermaid_png()))
 
             return graph
 
