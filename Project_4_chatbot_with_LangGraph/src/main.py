@@ -70,7 +70,7 @@ class LangGraphApp:
         try:
             logging.info("Displaying result on Streamlit UI")
 
-            DisplayResultStreamlit(self.graph, user_message).display_result_on_ui()
+            DisplayResultStreamlit(self.graph, user_message).display_result()
 
             logging.info("Result displayed successfully")
 
