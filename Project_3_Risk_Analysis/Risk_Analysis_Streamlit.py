@@ -332,7 +332,7 @@ def streamlit_app():
             embeddings = create_embeddings()
             vectorstore = create_faiss_vectorstore(chunks, embeddings)
             st.session_state.vectorstore = vectorstore
-        st.success("✅ Document processed successfully!")
+        st.sidebar.success("✅ Document processed successfully!")
     
     # Create Retriever
     vectorstore = st.session_state.vectorstore
