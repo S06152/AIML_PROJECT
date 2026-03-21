@@ -58,8 +58,9 @@ class DisplayResultStreamlit:
                 with st.chat_message("assistant"):
                     with st.spinner("🔍 Generating response..."):
                         try:
-                            response = self.graph.invoke({"messages": [("user", self.user_message)]})
-                            st.markdown(response["messages"][-1].content)
+                            result = self.graph.invoke({"messages": [("user", self.user_message)]})
+                            response = result["messages"][-1].content
+                            st.markdown(response)
                             logging.info("Assistant response generated successfully")
 
                         except Exception as e:
