@@ -4,9 +4,6 @@ from src.utils.exception import CustomException
 from src.main import LangGraphApp
 
 if __name__=="__main__":
-    """
-    Wrapper function to run the application.
-    """
     try:
         app = LangGraphApp()
         app.run()
