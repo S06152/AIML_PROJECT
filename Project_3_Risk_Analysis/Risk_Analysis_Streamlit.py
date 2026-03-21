@@ -323,7 +323,7 @@ def streamlit_app():
 
     # Processing the Document once
     if "vectorstore" not in st.session_state:
-        with st.spinner("Processing document...."):
+        with st.sidebar.spinner("Processing document...."):
             # Load and split documents
             documents = load_excel_documents(uploaded_file)
             chunks = split_documents_into_chunks(documents)
@@ -361,8 +361,6 @@ def streamlit_app():
             with st.spinner("🔍 AI Assistance is Analyzing..."):
                 try:
                     result = rag_chain.invoke(user_query)
-
-                    st.markdown("## 📊 Risk Analysis Result")
                     st.write(result)
 
                     # Show retrieved docs
