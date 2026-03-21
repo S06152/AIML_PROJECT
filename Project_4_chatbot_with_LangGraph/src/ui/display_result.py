@@ -59,7 +59,7 @@ class DisplayResultStreamlit:
                     with st.spinner("🔍 Generating response..."):
                         try:
                             response = self.graph.invoke({"messages": [("user", self.user_message)]})
-                            st.markdown(response["messages"].content)
+                            st.markdown(response["messages"][-1].content)
                             logging.info("Assistant response generated successfully")
 
                         except Exception as e:
