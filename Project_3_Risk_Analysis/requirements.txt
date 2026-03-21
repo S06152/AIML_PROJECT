@@ -1,0 +1,10 @@
+langchain-community
+unstructured
+openpyxl
+msoffcrypto-tool
+langchain-text-splitters
+langchain_huggingface
+sentence_transformers
+faiss-cpu
+langchain-groq
+langchain-core
