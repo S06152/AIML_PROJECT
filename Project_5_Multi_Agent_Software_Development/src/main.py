@@ -62,7 +62,7 @@ class Load_Multi_Agent_Software_Development:
                 self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
 
             else:
-                st.info(
+                logging.info(
                     "⚠️ No AUTOSAR SWS document uploaded.\n\n"
                     "Agents will run without AUTOSAR specification context.\n"
                     "Upload a SWS PDF for grounded, compliant output."
