@@ -2,7 +2,7 @@ import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 import streamlit as st
-from ui.streamlit_app import StreamlitApp
+from src.ui.streamlit_app import StreamlitApp
 from src.graph.workflow_graph import DevTeamWorkflow
 
 class Load_Multi_Agent_Software_Development:
