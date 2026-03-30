@@ -45,7 +45,7 @@ class ChromaVectorStore:
             self._embeddings = embeddings
 
             logging.info(
-                f"ChromaVectorStore initialized with {len(self.documents)} documents."
+                f"ChromaVectorStore initialized with {len(self._documents)} documents."
             )
 
         except Exception as e:
@@ -65,7 +65,7 @@ class ChromaVectorStore:
 
         try:
             logging.info("Creating Chroma vector store from documents.")
-            logging.info(f"Number of documents to index: {len(self.documents)}")
+            logging.info(f"Number of documents to index: {len(self._documents)}")
 
             vectorstore: Chroma = Chroma.from_documents(
                 documents = self._documents,
