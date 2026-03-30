@@ -11,3 +11,5 @@ chromadb
 pypdf
 python-dotenv
 typing-extensions
+pdfplumber 
+pymupdf
