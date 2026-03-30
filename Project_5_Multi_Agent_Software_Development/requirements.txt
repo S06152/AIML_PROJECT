@@ -13,3 +13,5 @@ python-dotenv
 typing-extensions
 pdfplumber 
 pymupdf
+torch 
+torchvision
