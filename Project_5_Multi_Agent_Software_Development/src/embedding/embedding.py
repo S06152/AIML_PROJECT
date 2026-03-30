@@ -64,7 +64,7 @@ class EmbeddingManager:
             # Create embeddings only once (singleton pattern)
             if self._embeddings is None:
                 logging.info(
-                    f"Creating HuggingFaceEmbeddings instance with model: {self.model_name}"
+                    f"Creating HuggingFaceEmbeddings instance with model: {self._model_name}"
                 )
 
                 self._embeddings = HuggingFaceEmbeddings(
