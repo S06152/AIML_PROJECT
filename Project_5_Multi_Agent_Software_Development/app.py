@@ -3,6 +3,8 @@ import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 from src.main import Load_Multi_Agent_Software_Development
+import warnings
+warnings.filterwarnings("ignore")
 
 if __name__ == "__main__":
     try:
@@ -17,4 +19,5 @@ if __name__ == "__main__":
 
     except Exception as e:
         logging.exception("Fatal error occurred while launching the application.")
-        raise CustomException(e, sys)
+        #raise CustomException(e, sys)
+        raise e
