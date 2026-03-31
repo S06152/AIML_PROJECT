@@ -9,6 +9,8 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from src.chain.prompt_templates import get_autosar_rag_prompt
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+import warnings
+warnings.filterwarnings("ignore")
 
 class QAChain:
     """

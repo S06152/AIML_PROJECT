@@ -4,6 +4,8 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 from typing import Optional
 from langchain_huggingface import HuggingFaceEmbeddings
+import warnings
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # Default embedding model — lightweight, fast, good semantic search quality

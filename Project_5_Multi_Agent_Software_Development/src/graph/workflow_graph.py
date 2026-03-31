@@ -10,6 +10,8 @@ from src.agents.developer import DeveloperAgent
 from src.agents.qa import QAAgent
 from src.agents.code_reviewer import CodeReviewAgent
 from src.llm.llm_provider import LLMProvider
+import warnings
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # LangGraph Node Name Constants (avoids magic strings throughout the file)

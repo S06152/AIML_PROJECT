@@ -5,6 +5,8 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 from configparser import ConfigParser
 from typing import List
+import warnings
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # Default Configuration File Name

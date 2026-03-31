@@ -12,6 +12,8 @@ from src.embedding.embedding import EmbeddingManager
 from src.vectorstore.chroma_store import ChromaVectorStore
 from src.retrieval.retriever import Retriever
 from src.chain.qa_chain import QAChain
+import warnings
+warnings.filterwarnings("ignore")
 
 class StreamlitApp:
     """

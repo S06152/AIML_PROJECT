@@ -1,5 +1,7 @@
 from typing import TypedDict, Optional
 from src.utils.logger import logging
+import warnings
+warnings.filterwarnings("ignore")
 
 logging.info("Initializing DevTeamState schema for DevTeam workflow")
 

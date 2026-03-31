@@ -4,6 +4,8 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 from typing import Optional
 from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
+import warnings
+warnings.filterwarnings("ignore")
 
 _DEFAULT_TOP_K: int = 5
 _SEARCH_TYPE: str = "similarity"

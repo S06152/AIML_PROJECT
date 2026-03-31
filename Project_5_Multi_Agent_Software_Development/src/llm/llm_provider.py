@@ -3,6 +3,8 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 from langchain_groq import ChatGroq
 from typing import Optional
+import warnings
+warnings.filterwarnings("ignore")
 
 class LLMProvider():
     """

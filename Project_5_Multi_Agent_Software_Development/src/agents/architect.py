@@ -5,6 +5,8 @@ from typing import Any
 from langchain_groq import ChatGroq
 from src.agents.base_agent import BaseAgent
 from src.models.state import DevTeamState
+import warnings
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # AUTOSAR Architect System Prompt

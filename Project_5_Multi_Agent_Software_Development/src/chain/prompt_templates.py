@@ -3,6 +3,8 @@ import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 from langchain_core.prompts import ChatPromptTemplate
+import warnings
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # AUTOSAR SWS RAG System Prompt

@@ -19,5 +19,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         logging.exception("Fatal error occurred while launching the application.")
-        #raise CustomException(e, sys)
-        raise e
+        raise CustomException(e, sys)

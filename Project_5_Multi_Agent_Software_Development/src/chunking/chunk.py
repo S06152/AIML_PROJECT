@@ -5,6 +5,8 @@ from src.utils.exception import CustomException
 from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+import warnings
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # AUTOSAR SWS document chunking defaults

@@ -4,6 +4,8 @@ from src.utils.exception import CustomException
 import streamlit as st
 from src.ui.streamlit_app import StreamlitApp
 from src.graph.workflow_graph import DevTeamWorkflow
+import warnings
+warnings.filterwarnings("ignore")
 
 class Load_Multi_Agent_Software_Development:
     """
