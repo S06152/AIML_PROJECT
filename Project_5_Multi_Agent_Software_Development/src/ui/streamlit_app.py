@@ -161,7 +161,7 @@ class StreamlitApp:
             qa_chain = QAChain(
                     retriever = vector_retriever,
                     groq_api_key = user_controls["GROQ_API_KEY"],
-                    model_name = user_controls["LLM_Model_Name"],
+                    model_name = user_controls["LLM_MODEL"],
                     temperature = user_controls["TEMPERATURE"],
                     max_tokens = user_controls["TOKEN"]
                 )
