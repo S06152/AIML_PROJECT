@@ -61,7 +61,6 @@ class Load_Multi_Agent_Software_Development:
             uploaded_files = st.sidebar.file_uploader("📂 Upload AUTOSAR SWS PDF", type = ["pdf"], accept_multiple_files = False, help = "Supported only: .pdf")
             
             if uploaded_files:
-                st.sidebar.spinner("📄 Loading & processing documents...")
                 self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
 
             else:
