@@ -171,6 +171,7 @@ class StreamlitApp:
             st.session_state["qa_chain"] = qa_chain
             st.session_state["chat_history"] = []
 
+            st.sidebar.success(f"✅ Total number of {len(chunks)} chunks.")
             logging.info("AUTOSAR SWS ingestion pipeline completed successfully.")
 
         except Exception as e:
