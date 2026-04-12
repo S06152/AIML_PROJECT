@@ -93,7 +93,7 @@ class Load_Multi_Agent_Software_Development:
 
                         # Retrieve AUTOSAR SWS context (grounding for all agents)
             with st.spinner("🔍 Retrieving AUTOSAR SWS context..."):
-                autosar_context: str = self._app.retrieve_autosar_context(user_request)
+                autosar_context: str = self._app.retrieve_autosar_context(user_request, self._user_input)
 
             if autosar_context:
                 st.info(

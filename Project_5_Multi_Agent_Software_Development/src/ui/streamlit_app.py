@@ -158,18 +158,8 @@ class StreamlitApp:
             retriever_mgr = Retriever(vector_db, top_k = user_controls["TOP_K"])
             vector_retriever = retriever_mgr.get_retriever()
 
-            qa_chain = QAChain(
-                    retriever = vector_retriever,
-                    groq_api_key = user_controls["GROQ_API_KEY"],
-                    model_name = user_controls["LLM_MODEL"],
-                    temperature = user_controls["TEMPERATURE"],
-                    max_tokens = user_controls["TOKEN"]
-                )
-
             # Store in session state for reuse across interactions
             st.session_state["vector_retriever"] = vector_retriever
-            st.session_state["qa_chain"] = qa_chain
-            st.session_state["chat_history"] = []
 
             logging.info("AUTOSAR SWS ingestion pipeline completed successfully.")
 
@@ -177,11 +167,10 @@ class StreamlitApp:
             logging.exception("Ingestion pipeline failed.")
             raise CustomException(e, sys)
     
-
     # -----------------------------------------------------------------------
     # AUTOSAR Context Retrieval
     # -----------------------------------------------------------------------
-    def retrieve_autosar_context(self, user_request: str) -> str:
+    def retrieve_autosar_context(self, user_request: str, user_controls: dict) -> str:
         """
         Retrieve the most relevant AUTOSAR SWS chunks for a user request.
 
@@ -196,15 +185,22 @@ class StreamlitApp:
                  if no document has been uploaded.
         """
         retriever = st.session_state.get("vector_retriever")
+
         if retriever is None:
             logging.info("No AUTOSAR SWS document loaded. Context will be empty.")
             return ""
 
         try:
             logging.info("Retrieving AUTOSAR SWS context for user request.")
-            docs = retriever.invoke(user_request)
-            context: str = "\n\n".join(doc.page_content for doc in docs)
-            logging.info("Retrieved %d AUTOSAR SWS chunks.", len(docs))
+            qa_chain = QAChain(
+                    retriever = retriever,
+                    groq_api_key = user_controls["GROQ_API_KEY"],
+                    model_name = user_controls["LLM_MODEL"],
+                    temperature = user_controls["TEMPERATURE"],
+                    max_tokens = user_controls["TOKEN"]
+                )
+            context = qa_chain.run(user_request)
+            logging.info("Retrieved %d AUTOSAR SWS chunks.", len(context))
             return context
         
         except Exception as e:
