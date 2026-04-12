@@ -33,3 +33,4 @@ typing-extensions>=4.9.0
 # ── ML Backend ────────────────────────────────────────────────────────────
 torch
 torchvision
+numpy==1.26.4
