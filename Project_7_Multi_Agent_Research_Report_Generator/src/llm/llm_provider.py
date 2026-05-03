@@ -41,7 +41,7 @@ class LLMProvider():
 
             # Extract configuration safely
             self._api_key: str = user_controls_input["GROQ_API_KEY"]
-            self._model_name: str = user_controls_input["LLM_Model"]
+            self._model_name: str = user_controls_input["LLM_MODEL"]
             self._temperature: float = float(user_controls_input["TEMPERATURE"])
             self._max_tokens: int = int(user_controls_input["TOKEN"])
             
