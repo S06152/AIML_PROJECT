@@ -96,7 +96,7 @@ class LLMProvider():
                 model = self._model_name,
                 api_key = self._api_key,
                 temperature = self._temperature,
-                token = self._max_tokens
+                max_tokens = self._max_tokens
             )
 
             logging.info("LLM instance created successfully")
