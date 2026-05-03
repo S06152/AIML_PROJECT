@@ -24,14 +24,14 @@ From the given content, extract:
 
 Output strictly in JSON format:
 
-{
+{{
   "themes": [
     {"theme": "...", "description": "..."}
   ],
   "key_stats": ["..."],
   "notable_quotes": ["..."],
   "source_urls": ["..."]
-}
+}}
 """
 
 class ExtractionAgent(BaseAgent):
