@@ -25,12 +25,12 @@ Evaluate based on:
 
 Provide output STRICTLY in JSON format:
 
-{
+{{
   "approved": true/false,
   "issues": ["..."],
   "suggestions": ["..."],
   "overall_score": 1-10
-}
+}}
 
 Rules:
 - Approve ONLY if the report is high quality (score >= 8)
