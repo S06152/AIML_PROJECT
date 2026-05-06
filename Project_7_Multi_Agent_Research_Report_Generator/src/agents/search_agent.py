@@ -8,7 +8,6 @@ from src.models.state import ResearchState, SearchResult
 from src.tools.search_tool import TavilySearchTool
 import warnings
 warnings.filterwarnings("ignore")
-import streamlit as st
 
 # Search Agent Prompt (Optional summarization)
 _SEARCH_PROMPT: str = """
@@ -73,7 +72,7 @@ class SearchAgent(BaseAgent):
             
             # Get queries safely
             queries: List[str] = state.get("search_queries", [])
-            st.write(f"Search query: {queries}")
+
             if not queries:
                 logging.warning("No search queries found. Using fallback query.")
                 topic = state.get("topic", "")
@@ -95,9 +94,9 @@ class SearchAgent(BaseAgent):
                         continue
 
                     logging.info("Searching for query: %s", clean_query)
-                    st.write("Inside query for loop")
+
                     results = self._search_tool.search(clean_query)
-                    st.write(f"Tavily raw response: {results}")
+
                     if not results:
                         logging.warning("No results found for query: %s", clean_query)
                         continue

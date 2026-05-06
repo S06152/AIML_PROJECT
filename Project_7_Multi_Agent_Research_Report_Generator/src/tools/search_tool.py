@@ -8,6 +8,7 @@ from src.utils.exception import CustomException
 from src.models.state import SearchResult
 from langchain_community.tools.tavily_search import TavilySearchResults
 warnings.filterwarnings("ignore")
+import streamlit as st
 
 class TavilySearchTool:
     """
@@ -63,9 +64,9 @@ class TavilySearchTool:
                 raise ValueError("Search query cannot be empty.")
             
             logging.info("Tavily search started | Quer = '%s' | MaxResults = %d", query, max_results)
-
+            st.write(f"Search query: {query}")
             response = self._client.invoke(query = query, max_results = max_results)
-
+            st.write(f"Tavily raw response: {response}")
             if not isinstance(response, dict):
                 logging.warning("Unexpected Tavily response format.")
                 return []
