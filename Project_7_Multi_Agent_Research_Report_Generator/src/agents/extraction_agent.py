@@ -26,7 +26,7 @@ Output strictly in JSON format:
 
 {{
   "themes": [
-    {"theme": "...", "description": "..."}
+    {{"theme": "...", "description": "..."}}
   ],
   "key_stats": ["..."],
   "notable_quotes": ["..."],
