@@ -4,6 +4,6 @@ langchain-core
 langchain-community
 langchain-groq
 langgraph
-tavily-python
+langchain_tavily
 reportlab
 pydantic
