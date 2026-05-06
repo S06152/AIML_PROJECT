@@ -95,7 +95,7 @@ class SearchAgent(BaseAgent):
                         continue
 
                     logging.info("Searching for query: %s", clean_query)
-
+                    st.write("Inside query for loop")
                     results = self._search_tool.search(clean_query)
                     st.write(f"Tavily raw response: {results}")
                     if not results:
