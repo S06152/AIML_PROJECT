@@ -65,7 +65,8 @@ class TavilySearchTool:
             
             logging.info("Tavily search started | Quer = '%s' | MaxResults = %d", query, max_results)
             st.write(f"Search query: {query}")
-            response = self._client.invoke(query = query, max_results = max_results)
+            #response = self._client.invoke(query = query, max_results = max_results)
+            response = self._client.invoke(query = query)
             st.write(f"Tavily raw response: {response}")
             if not isinstance(response, dict):
                 logging.warning("Unexpected Tavily response format.")
