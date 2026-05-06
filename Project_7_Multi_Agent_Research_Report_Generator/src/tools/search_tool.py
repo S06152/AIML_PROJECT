@@ -39,7 +39,7 @@ class TavilySearchTool:
             if not tavily_api_key:
                 raise ValueError("TAVILY_API_KEY not found in environment variables.")  
             st.write(tavily_api_key)
-            self._client = TavilySearchResults(tavily_api_key = tavily_api_key)
+            self._client = TavilySearchResults(tavily_api_key = tavily_api_key, max_results = 5)
 
             logging.info("TavilySearchTool initialized successfully.")
 
@@ -66,16 +66,19 @@ class TavilySearchTool:
             logging.info("Tavily search started | Quer = '%s' | MaxResults = %d", query, max_results)
             st.write(f"Search query: {query}")
             #response = self._client.invoke(query = query, max_results = max_results)
-            response = self._client.invoke(query = query)
+            response = self._client.invoke(query)
+            # ✅ Debug (remove later)
+            st.write("📦 Response Type:", type(response))
+            st.write("📦 Raw Response:", response)
             st.write(f"Tavily raw response: {response}")
-            if not isinstance(response, dict):
-                logging.warning("Unexpected Tavily response format.")
+            if not isinstance(response, list):
+                logging.warning(f"Unexpected Tavily response: {type(response)}")
                 return []
             
             # Normalize Results
             results: List[SearchResult] = []
 
-            for item in response.get("results", []):
+            for item in response:
                 result: SearchResult = {
                     "url": item.get("url", ""),
                     "title": item.get("title", ""),
