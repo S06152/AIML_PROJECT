@@ -24,9 +24,6 @@ Research Plan:
 
 Search Queries:
 - query 1
-- query 2
-- query 3
-- query 4
 """
 
 class OrchestratorAgent(BaseAgent):

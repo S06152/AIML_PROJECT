@@ -33,7 +33,7 @@ Provide output STRICTLY in JSON format:
 }}
 
 Rules:
-- Approve ONLY if the report is high quality (score >= 8)
+- Approve ONLY if the report is high quality (score >= 5)
 - Be critical and constructive
 """
 
