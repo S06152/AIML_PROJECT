@@ -39,7 +39,7 @@ class TavilySearchTool:
             if not tavily_api_key:
                 raise ValueError("TAVILY_API_KEY not found in environment variables.")  
             st.write(tavily_api_key)
-            self._client = TavilySearchResults(tavily_api_key = tavily_api_key, max_results = 5)
+            self._client = TavilySearchResults(tavily_api_key = tavily_api_key, max_results = 2)
 
             logging.info("TavilySearchTool initialized successfully.")
 
