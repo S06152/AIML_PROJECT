@@ -10,9 +10,6 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 warnings.filterwarnings("ignore")
 import streamlit as st
 
-MAX_RESULTS = 3
-MAX_SNIPPET_CHARS = 500
-
 class TavilySearchTool:
     """
     Wrapper around Tavily Search API.
@@ -22,6 +19,8 @@ class TavilySearchTool:
         - Normalize results into SearchResult format
         - Provide clean interface for SearchAgent
     """
+    MAX_RESULTS = 3
+    MAX_SNIPPET_CHARS = 500
 
     def __init__(self) -> None:
         """
@@ -44,7 +43,7 @@ class TavilySearchTool:
             
             self._client = TavilySearchResults(
                 tavily_api_key = tavily_api_key,
-                max_results = MAX_RESULTS,
+                max_results = self.MAX_RESULTS,
                 search_depth = "basic",
                 include_answer = False,
                 include_raw_content = False
