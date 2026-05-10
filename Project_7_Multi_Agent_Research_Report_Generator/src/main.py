@@ -39,6 +39,13 @@ class Load_Multi_Agent_Research_Report_Generator:
             # Load UI elements (sidebar inputs, configs, etc.)
             self._user_input = self._app.load_streamlit_ui()
 
+            # Persistent history of all reports generated in this browser
+            # session. Each entry is a dict:
+            #   { "query": str, "report": str, "pdf_bytes": bytes,
+            #     "filename": str }
+            if "reports" not in st.session_state:
+                st.session_state["reports"] = []
+
             logging.info("Streamlit UI loaded successfully with user configurations.")
 
             logging.info("ORCHESTRATOR INITIALIZATION COMPLETE")
@@ -56,23 +63,27 @@ class Load_Multi_Agent_Research_Report_Generator:
         try:
             logging.info("Waiting for user input...")
 
-            # Chat input from Streamlit UI
+            # If a new query is submitted, compute and append the result
+            # to the history BEFORE rendering, so it shows up in order.
             user_request = st.chat_input("Enter your research topic here...")
-            
+
             if user_request:
                 cleaned_request = user_request.strip()
                 logging.info(f"User input received: {cleaned_request}")
 
-                # Trigger agent workflow
-                self._run_agent_workflow(cleaned_request)
+                # Trigger agent workflow (appends to st.session_state.reports)
+                self._compute_and_store(cleaned_request)
+
+            # Always render the FULL history (previous + current).
+            self._render_history()
 
         except Exception as e:
             logging.exception("ERROR while handling user input.")
             raise CustomException(e, sys)
 
-    def _run_agent_workflow(self, user_request: str) -> None:
+    def _compute_and_store(self, user_request: str) -> None:
         """
-        Execute multi-agent pipeline and render results.
+        Execute multi-agent pipeline and APPEND result to session history.
 
         Pipeline:
             Orchestrator → Search → Extraction → Writer → Reviewer
@@ -95,73 +106,107 @@ class Load_Multi_Agent_Research_Report_Generator:
             with st.spinner("⚙️ Running multi-agent research pipeline..."):
                 logging.info("Executing multi-agent workflow...")
                 result = workflow.execute(user_request)
-            
+
             logging.info("Multi-agent workflow execution completed successfully.")
 
-            # Store Result in Session State
-            st.session_state["workflow_result"] = result
-
-            # Render Output
-            self._render_output(result, user_request)
-
-            logging.info("AGENT WORKFLOW END")
-
-        except Exception as e:
-            logging.exception("ERROR during multi-agent workflow execution.")
-            raise CustomException(e,sys)
-    
-    def _render_output(self, result: dict, user_request: str = "") -> None:
-        """
-        Render final report and provide PDF download.
-
-        Args:
-            result (dict): Final workflow output
-            user_request (str): Original user query (used to build a
-                descriptive PDF filename).
-        """
-        try:
-            logging.info("Rendering final output...")
-
             # Safely fetch report
-            final_report = result.get("final_report") or result.get("draft_report")
+            final_report = (
+                result.get("final_report")
+                or result.get("draft_report")
+                or ""
+            )
 
-            if not final_report:
+            if not final_report.strip():
                 logging.warning("No report found in workflow result.")
-                st.warning("⚠️ No report generated. Please try again.")
+                st.warning(
+                    "⚠️ No report generated for query: "
+                    f"'{user_request}'. Please try again."
+                )
                 return
 
             # Token / UI safety guard
             final_report = final_report[:MAX_REPORT_CHARS]
 
-            logging.info("Report ready | Length = %d", len(final_report))
-
-            # Display Report
-            st.subheader("📄 Generated Research Report")
-            st.markdown(final_report)
-
-            # Generate PDF
+            # Build PDF bytes (must persist across reruns -> store bytes,
+            # not BytesIO)
             logging.info("Generating PDF...")
             pdf_buffer = PDFGenerator.generate_pdf(final_report)
+            pdf_bytes = pdf_buffer.getvalue()
 
-            # Build a descriptive filename from the user query.
-            # As a smart fallback, use the first H1 in the report
-            # (the Writer agent always emits one).
-            title_match = re.search(r"^\s*#\s+(.+)$", final_report, re.MULTILINE)
-            fallback_title = title_match.group(1).strip() if title_match else ""
+            # Build a descriptive filename
+            title_match = re.search(
+                r"^\s*#\s+(.+)$", final_report, re.MULTILINE
+            )
+            fallback_title = (
+                title_match.group(1).strip() if title_match else ""
+            )
             pdf_filename = slugify_filename(user_request, fallback_title)
             logging.info("PDF filename = %s", pdf_filename)
 
-            # Download Button
-            st.download_button(
-                label = "⬇️ Download Report as PDF",
-                data = pdf_buffer,
-                file_name = pdf_filename,
-                mime = "application/pdf"
+            # Append to history (newest at the end => keep original order)
+            st.session_state["reports"].append(
+                {
+                    "query": user_request,
+                    "report": final_report,
+                    "pdf_bytes": pdf_bytes,
+                    "filename": pdf_filename,
+                }
             )
 
-            logging.info("PDF download ready.")
+            logging.info("AGENT WORKFLOW END")
 
         except Exception as e:
-            logging.exception("ERROR while rendering output.")
+            logging.exception("ERROR during multi-agent workflow execution.")
+            raise CustomException(e, sys)
+
+    def _render_history(self) -> None:
+        """
+        Render every report generated so far in this Streamlit session.
+
+        Each report is shown inside an expander with its own download
+        button (keyed uniquely so Streamlit doesn't complain).
+        """
+
+        try:
+            reports = st.session_state.get("reports", [])
+
+            if not reports:
+                # Nothing to render yet; show a friendly hint once.
+                st.info(
+                    "� Enter a research topic in the chat box below to "
+                    "generate your first report."
+                )
+                return
+
+            # Toolbar: count + clear-history button
+            top_left, top_right = st.columns([4, 1])
+            with top_left:
+                st.caption(
+                    f"🗂 {len(reports)} report(s) in this session "
+                    "(newest at the bottom)."
+                )
+            with top_right:
+                if st.button("🗑 Clear history", use_container_width=True):
+                    st.session_state["reports"] = []
+                    st.rerun()
+
+            # Render each report. Newest is the LAST one and is auto-expanded.
+            last_idx = len(reports) - 1
+            for idx, item in enumerate(reports):
+                expanded = idx == last_idx
+                header = f"📄 Query {idx + 1}: {item['query']}"
+
+                with st.expander(header, expanded=expanded):
+                    st.markdown(item["report"])
+                    st.download_button(
+                        label="⬇️ Download Report as PDF",
+                        data=item["pdf_bytes"],
+                        file_name=item["filename"],
+                        mime="application/pdf",
+                        key=f"download_pdf_{idx}",
+                    )
+
+        except Exception as e:
+            logging.exception("ERROR while rendering history.")
             raise CustomException(e, sys)
                 
