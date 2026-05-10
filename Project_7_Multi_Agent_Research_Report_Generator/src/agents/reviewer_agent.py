@@ -2,16 +2,12 @@ import sys
 import json
 import warnings
 from typing import Any, Dict
-
 from langchain_groq import ChatGroq
-
 from src.agents.base_agent import BaseAgent
 from src.models.state import ResearchState
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-
 warnings.filterwarnings("ignore")
-
 
 _REVIEWER_PROMPT = """
 Review the research report.
@@ -29,9 +25,7 @@ Rules:
 - Keep suggestions short
 """
 
-
 class ReviewerAgent(BaseAgent):
-
     MAX_REVISIONS = 1
 
     def __init__(self, llm: ChatGroq) -> None:
@@ -44,10 +38,7 @@ class ReviewerAgent(BaseAgent):
             logging.info("ReviewerAgent initialized.")
 
         except Exception as e:
-            logging.exception(
-                "ReviewerAgent initialization failed."
-            )
-
+            logging.exception("ReviewerAgent initialization failed.")
             raise CustomException(e, sys)
 
     def execute(self, state: ResearchState) -> Dict[str, Any]:
@@ -55,20 +46,11 @@ class ReviewerAgent(BaseAgent):
         try:
             logging.info("REVIEWER AGENT START")
 
-            report = state.get(
-                "draft_report",
-                ""
-            )
-
-            revision_count = state.get(
-                "revision_count",
-                0
-            )
+            report = state.get("draft_report","")
+            revision_count = state.get("revision_count", 0)
 
             if not report:
-                raise ValueError(
-                    "Draft report missing."
-                )
+                raise ValueError("Draft report missing.")
 
             # Keep report short for review
             review_text = report[:5000]
@@ -86,35 +68,16 @@ class ReviewerAgent(BaseAgent):
             try:
                 parsed = json.loads(response)
 
-                feedback["approved"] = parsed.get(
-                    "approved",
-                    True
-                )
-
-                feedback["overall_score"] = parsed.get(
-                    "overall_score",
-                    7
-                )
-
-                feedback["suggestions"] = parsed.get(
-                    "suggestions",
-                    []
-                )[:3]
+                feedback["approved"] = parsed.get("approved", True)
+                feedback["overall_score"] = parsed.get("overall_score", 7)
+                feedback["suggestions"] = parsed.get("suggestions", [])[:3]
 
             except Exception:
-                logging.warning(
-                    "Failed to parse review response."
-                )
+                logging.warning("Failed to parse review response.")
 
             # Final decision
-            if (
-                feedback["approved"]
-                or revision_count >= self.MAX_REVISIONS
-            ):
-
-                logging.info(
-                    "Finalizing report."
-                )
+            if (feedback["approved"]or revision_count >= self.MAX_REVISIONS):
+                logging.info("Finalizing report.")
 
                 return {
                     "review_feedback": feedback,
@@ -123,9 +86,7 @@ class ReviewerAgent(BaseAgent):
                 }
 
             # Request rewrite
-            logging.info(
-                "Revision required."
-            )
+            logging.info("Revision required.")
 
             return {
                 "review_feedback": feedback,
@@ -133,8 +94,5 @@ class ReviewerAgent(BaseAgent):
             }
 
         except Exception as e:
-            logging.exception(
-                "Error during ReviewerAgent execution."
-            )
-
+            logging.exception("Error during ReviewerAgent execution.")
             raise CustomException(e, sys)

@@ -3,28 +3,15 @@ import sys
 import re
 from io import BytesIO
 from datetime import datetime
-
-# ReportLab Imports
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    PageBreak,
-    ListFlowable,
-    ListItem,
-    HRFlowable,
-)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, ListFlowable, ListItem, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-
-# Internal Imports
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-
-
+ 
 class PDFGenerator:
     """
     Markdown-aware PDF Generator for the Multi-Agent Research Report.
@@ -43,14 +30,16 @@ class PDFGenerator:
     MAX_REPORT_CHARS = 60000
     MAX_PARAGRAPH_CHARS = 4000
 
-    # ----------------------------------------------------------------- #
     # Text helpers
-    # ----------------------------------------------------------------- #
     @staticmethod
     def _escape(text: str) -> str:
-        """Escape characters that ReportLab's mini-HTML parser dislikes."""
+        """
+        Escape characters that ReportLab's mini-HTML parser dislikes.
+        """
+
         if not text:
             return ""
+        
         return (
             text.replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -64,6 +53,7 @@ class PDFGenerator:
         small subset of HTML understood by ReportLab Paragraph.
         Input MUST already be HTML-escaped.
         """
+
         if not text:
             return ""
 
@@ -99,9 +89,7 @@ class PDFGenerator:
         """Escape HTML-sensitive chars then apply inline markdown."""
         return cls._inline_markdown(cls._escape(text.strip()))
 
-    # ----------------------------------------------------------------- #
     # Page decoration: page numbers + footer
-    # ----------------------------------------------------------------- #
     @staticmethod
     def _on_page(canvas, doc):
         canvas.saveState()
@@ -113,9 +101,7 @@ class PDFGenerator:
         canvas.drawRightString(A4[0] - 40, 28, f"Page {doc.page}")
         canvas.restoreState()
 
-    # ----------------------------------------------------------------- #
     # Main entry point
-    # ----------------------------------------------------------------- #
     @staticmethod
     def generate_pdf(report_text: str) -> BytesIO:
         try:
@@ -133,76 +119,76 @@ class PDFGenerator:
             buffer = BytesIO()
             doc = SimpleDocTemplate(
                 buffer,
-                pagesize=A4,
-                title="Multi-Agent Research Report",
-                author="Multi-Agent Research System",
-                rightMargin=0.7 * inch,
-                leftMargin=0.7 * inch,
-                topMargin=0.8 * inch,
-                bottomMargin=0.8 * inch,
+                pagesize = A4,
+                title = "Multi-Agent Research Report",
+                author = "Multi-Agent Research System",
+                rightMargin = 0.7 * inch,
+                leftMargin = 0.7 * inch,
+                topMargin = 0.8 * inch,
+                bottomMargin = 0.8 * inch,
             )
 
             styles = getSampleStyleSheet()
 
             cover_title_style = ParagraphStyle(
-                name="CoverTitle",
-                parent=styles["Title"],
-                fontSize=28,
-                leading=34,
-                alignment=TA_CENTER,
-                spaceAfter=24,
-                textColor=colors.HexColor("#0B3D91"),
+                name = "CoverTitle",
+                parent = styles["Title"],
+                fontSize = 28,
+                leading = 34,
+                alignment = TA_CENTER,
+                spaceAfter = 24,
+                textColor = colors.HexColor("#0B3D91"),
             )
             cover_sub_style = ParagraphStyle(
-                name="CoverSub",
-                parent=styles["Normal"],
-                fontSize=13,
-                leading=18,
-                alignment=TA_CENTER,
-                textColor=colors.HexColor("#444444"),
-                spaceAfter=10,
+                name = "CoverSub",
+                parent = styles["Normal"],
+                fontSize = 13,
+                leading = 18,
+                alignment = TA_CENTER,
+                textColor = colors.HexColor("#444444"),
+                spaceAfter = 10,
             )
             h1_style = ParagraphStyle(
-                name="H1",
-                parent=styles["Heading1"],
-                fontSize=20,
-                leading=26,
-                spaceBefore=18,
-                spaceAfter=12,
-                textColor=colors.HexColor("#0B3D91"),
+                name = "H1",
+                parent = styles["Heading1"],
+                fontSize = 20,
+                leading = 26,
+                spaceBefore = 18,
+                spaceAfter = 12,
+                textColor = colors.HexColor("#0B3D91"),
             )
             h2_style = ParagraphStyle(
-                name="H2",
-                parent=styles["Heading2"],
-                fontSize=15,
-                leading=20,
-                spaceBefore=14,
-                spaceAfter=8,
-                textColor=colors.HexColor("#11479E"),
+                name = "H2",
+                parent = styles["Heading2"],
+                fontSize = 15,
+                leading = 20,
+                spaceBefore = 14,
+                spaceAfter = 8,
+                textColor = colors.HexColor("#11479E"),
             )
             h3_style = ParagraphStyle(
-                name="H3",
-                parent=styles["Heading3"],
-                fontSize=12,
-                leading=16,
-                spaceBefore=10,
-                spaceAfter=6,
-                textColor=colors.HexColor("#333333"),
+                name = "H3",
+                parent = styles["Heading3"],
+                fontSize = 12,
+                leading = 16,
+                spaceBefore = 10,
+                spaceAfter = 6,
+                textColor = colors.HexColor("#333333"),
             )
             body_style = ParagraphStyle(
-                name="Body",
-                parent=styles["BodyText"],
-                fontSize=10.5,
-                leading=15,
-                alignment=TA_JUSTIFY,
-                spaceAfter=8,
+                name = "Body",
+                parent = styles["BodyText"],
+                fontSize = 10.5,
+                leading = 15,
+                alignment = TA_JUSTIFY,
+                spaceAfter = 8,
             )
             bullet_style = ParagraphStyle(
-                name="Bullet",
-                parent=body_style,
-                leftIndent=14,
-                bulletIndent=2,
-                spaceAfter=4,
+                name = "Bullet",
+                parent = body_style,
+                leftIndent = 14,
+                bulletIndent = 2,
+                spaceAfter = 4,
             )
 
             story = []

@@ -39,14 +39,9 @@ def _ascii_fold(text: str) -> str:
     return nfkd.encode("ascii", "ignore").decode("ascii")
 
 
-def slugify_filename(
-    query: str,
-    fallback_title: str | None = None,
-    max_len: int = _MAX_LEN,
-) -> str:
+def slugify_filename(query: str, fallback_title: str | None = None, max_len: int = _MAX_LEN) -> str:
     """
-    Convert a user query (or, if empty, a fallback title) into a safe
-    PDF filename.
+    Convert a user query (or, if empty, a fallback title) into a safe PDF filename.
 
     Examples
     --------

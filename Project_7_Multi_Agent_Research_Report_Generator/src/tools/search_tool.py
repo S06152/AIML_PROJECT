@@ -8,7 +8,6 @@ from src.utils.exception import CustomException
 from src.models.state import SearchResult
 from langchain_community.tools.tavily_search import TavilySearchResults
 warnings.filterwarnings("ignore")
-import streamlit as st
 
 class TavilySearchTool:
     """
@@ -106,17 +105,12 @@ class TavilySearchTool:
             
                 seen_urls.add(url)
 
-                # IMPORTANT:
                 # Use SHORT snippets only
-                snippet = self._clean_text(
-                    item.get("content", "")
-                )
+                snippet = self._clean_text(item.get("content", ""))
 
                 result: SearchResult = {
                     "url": url,
-                    "title": self._clean_text(
-                        item.get("title", "")
-                    ),
+                    "title": self._clean_text(item.get("title", "")),
                     "snippet": snippet,
                     "query": query,
                 }

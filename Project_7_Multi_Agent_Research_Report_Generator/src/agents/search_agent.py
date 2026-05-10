@@ -85,28 +85,19 @@ class SearchAgent(BaseAgent):
 
             # Keep up to 6 queries
             queries = queries[:6]
-
             all_results: List[SearchResult] = []
-            
             compressed_research = ""
 
             for query in queries:
-
                 query = query.strip()
-
                 if not query:
                     continue
 
                 logging.info("Searching: %s", query)
 
-                results = self._search_tool.search(
-                    query,
-                    max_results=3
-                )
+                results = self._search_tool.search(query, max_results = 3)
 
                 for item in results:
-
-                    # Store richer result
                     result = {
                         "title": item.get("title", "")[:200],
                         "snippet": item.get("snippet", "")[:800],
@@ -126,10 +117,7 @@ class SearchAgent(BaseAgent):
             # Keep compressed research generous but bounded
             compressed_research = compressed_research[:10000]
 
-            logging.info(
-                "Total Results=%d",
-                len(all_results)
-            )
+            logging.info("Total Results=%d",len(all_results))
 
             logging.info("SEARCH AGENT END")
 

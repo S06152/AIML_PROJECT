@@ -1,16 +1,12 @@
 import sys
 import warnings
 from typing import Any, Dict
-
 from langchain_groq import ChatGroq
-
 from src.agents.base_agent import BaseAgent
 from src.models.state import ResearchState
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-
 warnings.filterwarnings("ignore")
-
 
 _WRITER_PROMPT = """
 You are a Senior Research Report Writer.
@@ -85,7 +81,6 @@ Hard rules:
 - Aim for ~2500-3500 words total.
 """
 
-
 class WriterAgent(BaseAgent):
 
     def __init__(self, llm: ChatGroq) -> None:
@@ -106,35 +101,19 @@ class WriterAgent(BaseAgent):
         try:
             logging.info("WRITER AGENT START")
 
-            extracted_data = state.get(
-                "extracted_data",
-                {}
-            )
+            extracted_data = state.get("extracted_data",{})
 
             if not extracted_data:
-                raise ValueError(
-                    "No extracted data found."
-                )
+                raise ValueError("No extracted data found.")
 
             topic = state.get("topic", "").strip()
             research_plan = state.get("research_plan", "")
             dimensions = state.get("report_dimensions", []) or []
 
             # Keep more data this time
-            key_points = extracted_data.get(
-                "key_points",
-                []
-            )[:10]
-
-            statistics = extracted_data.get(
-                "statistics",
-                []
-            )[:10]
-
-            sources = extracted_data.get(
-                "source_urls",
-                []
-            )[:10]
+            key_points = extracted_data.get( "key_points", [])[:10]
+            statistics = extracted_data.get("statistics", [])[:10]
+            sources = extracted_data.get("source_urls",[])[:10]
 
             # Format inputs as readable bullet lists
             kp_text = "\n".join(f"- {p}" for p in key_points) or "- (none)"
@@ -146,26 +125,26 @@ class WriterAgent(BaseAgent):
             )
 
             input_text = f"""
-Topic:
-{topic}
+                Topic:
+                {topic}
 
-Research Plan:
-{research_plan}
+                Research Plan:
+                {research_plan}
 
-Report Dimensions (use ONE ### sub-heading per dimension in Section 6):
-{dim_text}
+                Report Dimensions (use ONE ### sub-heading per dimension in Section 6):
+                {dim_text}
 
-Key Points:
-{kp_text}
+                Key Points:
+                {kp_text}
 
-Statistics:
-{stat_text}
+                Statistics:
+                {stat_text}
 
-Sources:
-{src_text}
+                Sources:
+                {src_text}
 
-Now write the full multi-section report following the required structure.
-"""
+                Now write the full multi-section report following the required structure.
+            """
 
             # Allow a richer prompt
             input_text = input_text[:10000]
@@ -179,19 +158,12 @@ Now write the full multi-section report following the required structure.
             # Final hard limit (large enough for 4+ pages)
             report = report[:30000]
 
-            logging.info(
-                "Report generated successfully."
-            )
+            logging.info( "Report generated successfully.")
 
             logging.info("WRITER AGENT END")
 
-            return {
-                "draft_report": report
-            }
+            return {"draft_report": report}
 
         except Exception as e:
-            logging.exception(
-                "Error during WriterAgent execution."
-            )
-
+            logging.exception("Error during WriterAgent execution.")
             raise CustomException(e, sys)

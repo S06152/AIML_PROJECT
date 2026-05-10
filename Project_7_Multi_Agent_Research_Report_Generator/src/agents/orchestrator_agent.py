@@ -132,13 +132,13 @@ class OrchestratorAgent(BaseAgent):
             # Section-aware parsing using the three required headings
             text = response
 
-            # 1) Research Plan: everything between "Research Plan:" and the
-            #    next known heading.
+            # 1) Research Plan: everything between "Research Plan:" and the next known heading.
             plan_match = re.search(
                 r"Research Plan:\s*(.*?)(?=\n\s*(?:Report Dimensions:|Search Queries:)|$)",
                 text,
                 re.IGNORECASE | re.DOTALL,
             )
+
             if plan_match:
                 research_plan = plan_match.group(1).strip()
 
@@ -148,6 +148,7 @@ class OrchestratorAgent(BaseAgent):
                 text,
                 re.IGNORECASE | re.DOTALL,
             )
+
             if dim_match:
                 for raw_line in dim_match.group(1).splitlines():
                     line = raw_line.strip().lstrip("-*0123456789.) ").strip()
@@ -160,6 +161,7 @@ class OrchestratorAgent(BaseAgent):
                 text,
                 re.IGNORECASE | re.DOTALL,
             )
+            
             if q_match:
                 for raw_line in q_match.group(1).splitlines():
                     line = raw_line.strip().lstrip("-*0123456789.) ").strip()

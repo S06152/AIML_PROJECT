@@ -135,23 +135,12 @@ class BaseAgent:
             response: Optional[str] = self._chain.invoke({"input_text": input_text})
 
             if not response:
-                logging.warning(
-                    "Empty response from %s",
-                    type(self).__name__
-                )
-
+                logging.warning("Empty response from %s",type(self).__name__)
                 return ""
 
-            response = self._truncate_output(
-                response.strip()
-            )
+            response = self._truncate_output(response.strip())
 
-            logging.info(
-                "%s completed | OutputChars=%d",
-                type(self).__name__,
-                len(response)
-            )
-
+            logging.info("%s completed | OutputChars=%d",type(self).__name__,len(response))
             return response
 
         except Exception as e:

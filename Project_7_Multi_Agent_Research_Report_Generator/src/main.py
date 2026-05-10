@@ -10,8 +10,6 @@ from src.report.pdf_generator import PDFGenerator
 import warnings
 warnings.filterwarnings("ignore")
 
-MAX_REPORT_CHARS = 60000
-
 class Load_Multi_Agent_Research_Report_Generator:
     """
     Main Orchestrator Class for Multi-Agent Research & Report Generator
@@ -23,6 +21,8 @@ class Load_Multi_Agent_Research_Report_Generator:
         - Store results in session state
         - Render final report + PDF download
     """
+
+    MAX_REPORT_CHARS = 60000
 
     def __init__(self)-> None:
         """
@@ -110,22 +110,15 @@ class Load_Multi_Agent_Research_Report_Generator:
             logging.info("Multi-agent workflow execution completed successfully.")
 
             # Safely fetch report
-            final_report = (
-                result.get("final_report")
-                or result.get("draft_report")
-                or ""
-            )
+            final_report = (result.get("final_report") or result.get("draft_report") or "")
 
             if not final_report.strip():
                 logging.warning("No report found in workflow result.")
-                st.warning(
-                    "⚠️ No report generated for query: "
-                    f"'{user_request}'. Please try again."
-                )
+                st.warning("⚠️ No report generated for query: "f"'{user_request}'. Please try again.")
                 return
 
             # Token / UI safety guard
-            final_report = final_report[:MAX_REPORT_CHARS]
+            final_report = final_report[:self.MAX_REPORT_CHARS]
 
             # Build PDF bytes (must persist across reruns -> store bytes,
             # not BytesIO)
@@ -134,13 +127,12 @@ class Load_Multi_Agent_Research_Report_Generator:
             pdf_bytes = pdf_buffer.getvalue()
 
             # Build a descriptive filename
-            title_match = re.search(
-                r"^\s*#\s+(.+)$", final_report, re.MULTILINE
-            )
-            fallback_title = (
-                title_match.group(1).strip() if title_match else ""
-            )
+            title_match = re.search(r"^\s*#\s+(.+)$", final_report, re.MULTILINE)
+
+            fallback_title = (title_match.group(1).strip() if title_match else "")
+            
             pdf_filename = slugify_filename(user_request, fallback_title)
+
             logging.info("PDF filename = %s", pdf_filename)
 
             # Append to history (newest at the end => keep original order)
@@ -180,11 +172,13 @@ class Load_Multi_Agent_Research_Report_Generator:
 
             # Toolbar: count + clear-history button
             top_left, top_right = st.columns([4, 1])
+
             with top_left:
                 st.caption(
                     f"🗂 {len(reports)} report(s) in this session "
                     "(newest at the bottom)."
                 )
+
             with top_right:
                 if st.button("🗑 Clear history", use_container_width=True):
                     st.session_state["reports"] = []
@@ -196,14 +190,14 @@ class Load_Multi_Agent_Research_Report_Generator:
                 expanded = idx == last_idx
                 header = f"📄 Query {idx + 1}: {item['query']}"
 
-                with st.expander(header, expanded=expanded):
+                with st.expander(header, expanded = expanded):
                     st.markdown(item["report"])
                     st.download_button(
-                        label="⬇️ Download Report as PDF",
-                        data=item["pdf_bytes"],
-                        file_name=item["filename"],
-                        mime="application/pdf",
-                        key=f"download_pdf_{idx}",
+                        label = "⬇️ Download Report as PDF",
+                        data = item["pdf_bytes"],
+                        file_name = item["filename"],
+                        mime = "application/pdf",
+                        key = f"download_pdf_{idx}",
                     )
 
         except Exception as e:
