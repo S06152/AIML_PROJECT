@@ -18,11 +18,11 @@ Extract important insights from the research text.
 
 Return ONLY valid JSON in this format:
 
-{
+{{
   "key_points": ["point 1", "point 2"],
   "statistics": ["stat 1", "stat 2"],
   "source_urls": ["url1", "url2"]
-}
+}}
 """
 
 

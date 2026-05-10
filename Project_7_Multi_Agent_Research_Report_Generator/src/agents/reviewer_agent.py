@@ -18,11 +18,11 @@ Review the research report.
 
 Return ONLY valid JSON:
 
-{
+{{
   "approved": true,
   "overall_score": 8,
   "suggestions": ["suggestion 1"]
-}
+}}
 
 Rules:
 - Approve if report is reasonably good
