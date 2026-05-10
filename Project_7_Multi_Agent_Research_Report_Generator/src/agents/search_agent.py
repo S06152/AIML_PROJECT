@@ -83,8 +83,8 @@ class SearchAgent(BaseAgent):
         
             logging.info("Executing %d queries", len(queries))
 
-            # Keep up to 4 queries
-            queries = queries[:4]
+            # Keep up to 6 queries
+            queries = queries[:6]
 
             all_results: List[SearchResult] = []
             
@@ -101,7 +101,7 @@ class SearchAgent(BaseAgent):
 
                 results = self._search_tool.search(
                     query,
-                    max_results=4
+                    max_results=3
                 )
 
                 for item in results:

@@ -85,14 +85,10 @@ class TavilySearchTool:
                 raise ValueError("Search query cannot be empty.")
             
             logging.info("Tavily search started | Quer = '%s' | MaxResults = %d", query, max_results)
-            st.write(f"Search query: {query}")
-            #response = self._client.invoke(query = query, max_results = max_results)
+
             query = query.strip()[:200]
             response = self._client.invoke(query)
-            # ✅ Debug (remove later)
-            st.write("📦 Response Type:", type(response))
-            st.write("📦 Raw Response:", response)
-            st.write(f"Tavily raw response: {response}")
+
             if not isinstance(response, list):
                 logging.warning(f"Unexpected Tavily response: {type(response)}")
                 return []

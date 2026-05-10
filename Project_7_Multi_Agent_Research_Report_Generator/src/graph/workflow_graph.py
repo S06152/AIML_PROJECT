@@ -186,6 +186,7 @@ class GraphBuilder:
                 "topic": topic,
                 "research_plan": "",
                 "search_queries": [],
+                "report_dimensions": [],
                 "raw_search_results": [],
                 "extracted_data": None,
                 "draft_report": "",

@@ -1,6 +1,8 @@
 import sys
+import re
 from src.utils.logger import logging
 from src.utils.exception import CustomException
+from src.utils.filename import slugify_filename
 import streamlit as st
 from src.ui.streamlit_app import StreamlitApp
 from src.graph.workflow_graph import GraphBuilder
@@ -100,7 +102,7 @@ class Load_Multi_Agent_Research_Report_Generator:
             st.session_state["workflow_result"] = result
 
             # Render Output
-            self._render_output(result)
+            self._render_output(result, user_request)
 
             logging.info("AGENT WORKFLOW END")
 
@@ -108,12 +110,14 @@ class Load_Multi_Agent_Research_Report_Generator:
             logging.exception("ERROR during multi-agent workflow execution.")
             raise CustomException(e,sys)
     
-    def _render_output(self, result: dict) -> None:
+    def _render_output(self, result: dict, user_request: str = "") -> None:
         """
         Render final report and provide PDF download.
 
         Args:
             result (dict): Final workflow output
+            user_request (str): Original user query (used to build a
+                descriptive PDF filename).
         """
         try:
             logging.info("Rendering final output...")
@@ -139,11 +143,19 @@ class Load_Multi_Agent_Research_Report_Generator:
             logging.info("Generating PDF...")
             pdf_buffer = PDFGenerator.generate_pdf(final_report)
 
+            # Build a descriptive filename from the user query.
+            # As a smart fallback, use the first H1 in the report
+            # (the Writer agent always emits one).
+            title_match = re.search(r"^\s*#\s+(.+)$", final_report, re.MULTILINE)
+            fallback_title = title_match.group(1).strip() if title_match else ""
+            pdf_filename = slugify_filename(user_request, fallback_title)
+            logging.info("PDF filename = %s", pdf_filename)
+
             # Download Button
             st.download_button(
                 label = "⬇️ Download Report as PDF",
                 data = pdf_buffer,
-                file_name = "research_report.pdf",
+                file_name = pdf_filename,
                 mime = "application/pdf"
             )
 
