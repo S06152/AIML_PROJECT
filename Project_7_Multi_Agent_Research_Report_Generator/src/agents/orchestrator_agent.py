@@ -9,21 +9,21 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Orchestrator System Prompt
-_ORCHESTRATOR_PROMPT: str = """
-You are a Research Orchestrator Agent.
+_ORCHESTRATOR_PROMPT = """
+You are a Research Planning Agent.
 
-Your job is to:
-1. Understand the user's topic
-2. Break it into a structured research plan
-3. Generate multiple focused search queries
+Tasks:
+1. Create a short research plan
+2. Generate ONLY 2 search queries
 
-Output strictly in this format:
+Output Format:
 
 Research Plan:
-<clear structured plan>
+<short plan>
 
 Search Queries:
 - query 1
+- query 2
 """
 
 class OrchestratorAgent(BaseAgent):
@@ -89,6 +89,7 @@ class OrchestratorAgent(BaseAgent):
             logging.info("Processing topic: %s", topic)
          
             # Run LLM
+            topic = topic[:300]
             response: str = self.run(topic)
 
             if not response:
@@ -104,44 +105,47 @@ class OrchestratorAgent(BaseAgent):
             research_plan: str = ""
             search_queries: List[str] = []
 
-            try:
-                if "Search Queries:" in response:
-                    parts = response.split("Search Queries:")
+            # Simple Parsing
+            if "Search Queries:" in response:
 
-                    # Extract plan
-                    research_plan = parts[0].replace("Research Plan:", "").strip()
+                parts = response.split("Search Queries:")
 
-                    # Extract queries
-                    queries_block = parts[1].strip().split("\n")
+                # Research Plan
+                research_plan = (parts[0].replace("Research Plan:", "").strip())
 
-                    search_queries = [q.replace("- ", "").strip() for q in queries_block if q.strip()]
+                # Queries
+                query_lines = parts[1].split("\n")
 
-                else:
-                    logging.warning("Unexpected LLM response format. Using fallback parsing.")
-                    research_plan = response.strip()
-            
-            except Exception as e:
-                logging.exception("Parsing failed. Using raw response.")
-                research_plan = response.strip()
-            
-            # Final fallback if queries empty
+                for line in query_lines:
+
+                    line = line.replace("-", "").strip()
+
+                    if line and line not in search_queries:
+                        search_queries.append(line[:100])
+
+            # Fallback
+            if not research_plan:
+                research_plan = f"Research topic: {topic}"
+
             if not search_queries:
-                logging.warning("No queries extracted. Generating fallback query.")
-                search_queries = [topic]
+                search_queries = [topic[:80]]
+
+            # Keep only 2 queries
+            search_queries = search_queries[:2]
 
             logging.info(
-                "Parsed Output | PlanLength=%d | QueriesCount=%d",
+                "Plan Length=%d | Queries=%d",
                 len(research_plan),
-                len(search_queries),
+                len(search_queries)
             )
 
             logging.info("ORCHESTRATOR EXECUTION END")
 
             return {
-                "research_plan": research_plan,
+                "research_plan": research_plan[:500],
                 "search_queries": search_queries
             }
-
+           
         except Exception as e:
             logging.exception("Error during OrchestratorAgent execution.")
             raise CustomException(e, sys)

@@ -10,9 +10,9 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Search Agent Prompt (Optional summarization)
-_SEARCH_PROMPT: str = """
-You are a search specialist. Given search results, summarize key findings 
-in 1–2 sentences per query. Be factual and concise.
+_SEARCH_PROMPT = """
+Summarize the search results in short bullet points.
+Keep the response concise.
 """
 
 class SearchAgent(BaseAgent):
@@ -83,41 +83,58 @@ class SearchAgent(BaseAgent):
         
             logging.info("Executing %d queries", len(queries))
 
+            # Keep only 2 queries
+            queries = queries[:2]
+
             all_results: List[SearchResult] = []
             
-            # Execute search per query
+            compressed_research = ""
+
             for query in queries:
-                try:
-                    clean_query = query.strip()
 
-                    if not clean_query:
-                        continue
+                query = query.strip()
 
-                    logging.info("Searching for query: %s", clean_query)
-
-                    results = self._search_tool.search(clean_query)
-
-                    if not results:
-                        logging.warning("No results found for query: %s", clean_query)
-                        continue
-                        
-                    logging.info("Query completed | Results = %d", len(results))
-
-                    all_results.extend(results)
-
-                except Exception:
-                    logging.exception("Search failed for query: %s (continuing)", query)
+                if not query:
                     continue
-          
-            # Final validation
-            if not all_results:
-                logging.warning("No search results collected from any query.")
-            
-            logging.info("Total aggregated results: %d", len(all_results))
+
+                logging.info("Searching: %s", query)
+
+                results = self._search_tool.search(
+                    query,
+                    max_results=2
+                )
+
+                for item in results:
+
+                    # Store lightweight result
+                    result = {
+                        "title": item.get("title", "")[:100],
+                        "snippet": item.get("snippet", "")[:300],
+                        "url": item.get("url", "")
+                    }
+
+                    all_results.append(result)
+
+                    # Build compressed text
+                    compressed_research += (
+                        f"Title: {result['title']}\n"
+                        f"Summary: {result['snippet']}\n\n"
+                    )
+
+            # Keep compressed research short
+            compressed_research = compressed_research[:3000]
+
+            logging.info(
+                "Total Results=%d",
+                len(all_results)
+            )
 
             logging.info("SEARCH AGENT END")
 
-            return {"raw_search_results": all_results}
+            return {
+                "compressed_research": compressed_research,
+                "raw_search_results": all_results
+            }
 
         except Exception as e:
             logging.exception("Error during SearchAgent execution.")

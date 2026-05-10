@@ -8,6 +8,9 @@ from langchain_core.prompts import ChatPromptTemplate
 import warnings
 warnings.filterwarnings("ignore")
 
+MAX_INPUT_CHARS = 6000
+MAX_OUTPUT_CHARS = 12000
+
 class BaseAgent:
     """
     Base class for all agents in the Multi-Agent Research & Report Generator.
@@ -45,7 +48,7 @@ class BaseAgent:
             self._llm: ChatGroq = llm
 
             # Store system prompt for later execution
-            self._system_prompt: str = system_prompt.strip()
+            self._system_prompt: str = system_prompt.strip()[:2000]
 
             # Build chain once (performance optimization)
             self._chain = self._build_chain()
@@ -85,6 +88,26 @@ class BaseAgent:
             logging.exception("Error while building LLM chain")
             raise CustomException(e, sys)
         
+    def _truncate_input(self,text: str) -> str:
+        """
+        Prevent oversized prompts.
+        """
+
+        if not text:
+            return ""
+
+        return text[:self.MAX_INPUT_CHARS]
+
+    def _truncate_output(self, text: str) -> str:
+        """
+        Prevent oversized outputs.
+        """
+
+        if not text:
+            return ""
+
+        return text[:self.MAX_OUTPUT_CHARS]
+
     def run(self, input_text: str) -> str:
         """
         Execute LLM pipeline.
@@ -100,6 +123,9 @@ class BaseAgent:
         """
 
         try:
+
+            input_text = self._truncate_input(input_text)
+
             logging.info(
                 "Agent execution started | Agent = %s | InputLength = %d",
                 type(self).__name__,
@@ -109,18 +135,25 @@ class BaseAgent:
             # Execute chain
             response: Optional[str] = self._chain.invoke({"input_text": input_text})
 
-            # Validate Output
-            if not response or not response.strip():
-                logging.warning("Empty response received from LLM.")
+            if not response:
+                logging.warning(
+                    "Empty response from %s",
+                    type(self).__name__
+                )
+
                 return ""
 
-            logging.info(
-                "Agent execution completed | Agent=%s | OutputLength=%d",
-                type(self).__name__,
-                len(response),
+            response = self._truncate_output(
+                response.strip()
             )
-          
-            return response.strip()
+
+            logging.info(
+                "%s completed | OutputChars=%d",
+                type(self).__name__,
+                len(response)
+            )
+
+            return response
 
         except Exception as e:
             logging.exception("ERROR during agent execution.")

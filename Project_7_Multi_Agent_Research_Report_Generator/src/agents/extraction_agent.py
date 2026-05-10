@@ -1,162 +1,109 @@
 import sys
 import json
 import warnings
-from typing import Any, Dict, List
+from typing import Any, Dict
+
 from langchain_groq import ChatGroq
+
+from src.agents.base_agent import BaseAgent
+from src.models.state import ResearchState
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-from src.agents.base_agent import BaseAgent
-from src.models.state import ResearchState, ExtractedData, SearchResult
+
 warnings.filterwarnings("ignore")
 
-# Extraction Agent Prompt
-_EXTRACTION_PROMPT: str = """
-You are a Research Extraction Agent.
 
-Your task is to analyze search results and extract structured insights.
+_EXTRACTION_PROMPT = """
+Extract important insights from the research text.
 
-From the given content, extract:
+Return ONLY valid JSON in this format:
 
-1. Key Themes (with short descriptions)
-2. Important Statistics or Data Points
-3. Notable Quotes or Insights
-4. Source URLs
-
-Output strictly in JSON format:
-
-{{
-  "themes": [
-    {{"theme": "...", "description": "..."}}
-  ],
-  "key_stats": ["..."],
-  "notable_quotes": ["..."],
-  "source_urls": ["..."]
-}}
+{
+  "key_points": ["point 1", "point 2"],
+  "statistics": ["stat 1", "stat 2"],
+  "source_urls": ["url1", "url2"]
+}
 """
 
+
 class ExtractionAgent(BaseAgent):
-    """
-    Extraction Agent
-
-    Responsibilities:
-        - Process raw search results
-        - Extract structured insights using LLM
-        - Return structured ExtractedData
-
-    Input (from ResearchState):
-        - raw_search_results (List[SearchResult])
-
-    Output (to ResearchState):
-        - extracted_data (ExtractedData)
-    """
 
     def __init__(self, llm: ChatGroq) -> None:
-        """
-        Initialize ExtractionAgent with system prompt.
 
-        Args:
-            llm (ChatGroq): Shared LLM instance
-
-        Raises:
-            CustomException: If initialization fails
-        """
-                
         try:
-            logging.info("Initializing ExtractionAgent...")
+            logging.info("Initializing ExtractionAgent")
 
             super().__init__(llm, _EXTRACTION_PROMPT)
 
-            logging.info("ExtractionAgent initialized successfully.")
+            logging.info("ExtractionAgent initialized.")
 
         except Exception as e:
-            logging.exception("Error initializing ExtractionAgent.")
+            logging.exception("Error initializing ExtractionAgent")
             raise CustomException(e, sys)
 
     def execute(self, state: ResearchState) -> Dict[str, Any]:
-        """
-        Extract structured insights from raw search results.
 
-        Args:
-            state (ResearchState): Workflow state containing search results
-
-        Returns:
-            Dict[str, Any]:
-                {
-                    "extracted_data": ExtractedData
-                }
-
-        Raises:
-            CustomException: If execution fails
-        """
         try:
             logging.info("EXTRACTION AGENT START")
 
-            # Validate input
-            results: List[SearchResult] = state.get("raw_search_results", [])
-
-            if not results:
-                raise ValueError("raw_search_results is empty.")
-
-            logging.info("Processing %d search results.", len(results))
-
-            # Prepare input text for LLM (limit to avoid token overflow)
-            combined_text_parts: List[str] = []
-
-            for idx, result in enumerate(results[:10]):  # limit to top 10
-                combined_text_parts.append(
-                    f"""
-                        Result: {idx + 1}
-                        Title: {result.get('title', '')}
-                        Snippet: {result.get('snippet', '')}
-                        URL: {result.get('url', '')}
-                    """
-                )
-
-            combined_text: str = "\n".join(combined_text_parts)
-            logging.debug("Prepared combined text for LLM (length = %d chars).", len(combined_text))
-
-           # Run LLM extraction
-            response: str = self.run(combined_text)
-
-            logging.info("LLM extraction response received.")
-
-            # Parse JSON output
-            try:
-                extracted: ExtractedData = json.loads(response)
-                
-                # Basic schema validation
-                if not isinstance(extracted, dict):
-                    raise ValueError("Parsed JSON is not a dictionary.")
-
-                extracted.setdefault("themes", [])
-                extracted.setdefault("key_stats", [])
-                extracted.setdefault("notable_quotes", [])
-                extracted.setdefault("source_urls", [])
-
-                logging.info("Extracted data parsed successfully.")
-
-            except Exception as parse_error:
-                logging.warning("JSON parsing failed. Falling back to empty structure. Error: %s", str(parse_error))
-
-                extracted = {
-                    "themes": [],
-                    "key_stats": [],
-                    "notable_quotes": [],
-                    "source_urls": []
-                }
-            
-            logging.info(
-                "Extraction summary | Themes = %d | Stats = %d | Quotes = %d | Sources = %d",
-                len(extracted.get("themes", [])),
-                len(extracted.get("key_stats", [])),
-                len(extracted.get("notable_quotes", [])),
-                len(extracted.get("source_urls", [])),
+            # Use compressed research instead of raw results
+            research_text = state.get(
+                "compressed_research",
+                ""
             )
 
-            logging.info("EXTRACTION AGENT EXECUTION  END")
+            if not research_text:
+                raise ValueError("No research text found.")
 
-            return {"extracted_data": extracted}
+            # Keep text short
+            research_text = research_text[:4000]
+
+            # Run LLM
+            response = self.run(research_text)
+
+            # Default fallback
+            extracted_data = {
+                "key_points": [],
+                "statistics": [],
+                "source_urls": []
+            }
+
+            try:
+                parsed = json.loads(response)
+
+                extracted_data["key_points"] = parsed.get(
+                    "key_points",
+                    []
+                )[:5]
+
+                extracted_data["statistics"] = parsed.get(
+                    "statistics",
+                    []
+                )[:5]
+
+                extracted_data["source_urls"] = parsed.get(
+                    "source_urls",
+                    []
+                )[:5]
+
+            except Exception:
+                logging.warning(
+                    "JSON parsing failed. Using fallback."
+                )
+
+            logging.info(
+                "Extraction completed."
+            )
+
+            logging.info("EXTRACTION AGENT END")
+
+            return {
+                "extracted_data": extracted_data
+            }
 
         except Exception as e:
-            logging.exception("Error during ExtractionAgent execution.")
+            logging.exception(
+                "Error during ExtractionAgent execution."
+            )
+
             raise CustomException(e, sys)

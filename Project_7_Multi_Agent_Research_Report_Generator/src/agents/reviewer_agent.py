@@ -1,163 +1,120 @@
-# Standard Library Imports
 import sys
 import json
 import warnings
 from typing import Any, Dict
+
 from langchain_groq import ChatGroq
+
+from src.agents.base_agent import BaseAgent
+from src.models.state import ResearchState
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-from src.agents.base_agent import BaseAgent
-from src.models.state import ResearchState, ReviewFeedback
+
 warnings.filterwarnings("ignore")
 
-# Reviewer Agent Prompt
-_REVIEWER_PROMPT: str = """
-You are a Senior Research Reviewer.
 
-Your task is to critically evaluate the given research report.
+_REVIEWER_PROMPT = """
+Review the research report.
 
-Evaluate based on:
-1. Clarity and readability
-2. Completeness of coverage
-3. Logical structure
-4. Use of supporting data
-5. Professional tone
+Return ONLY valid JSON:
 
-Provide output STRICTLY in JSON format:
-
-{{
-  "approved": true/false,
-  "issues": ["..."],
-  "suggestions": ["..."],
-  "overall_score": 1-10
-}}
+{
+  "approved": true,
+  "overall_score": 8,
+  "suggestions": ["suggestion 1"]
+}
 
 Rules:
-- Approve ONLY if the report is high quality (score >= 5)
-- Be critical and constructive
+- Approve if report is reasonably good
+- Keep suggestions short
 """
 
+
 class ReviewerAgent(BaseAgent):
-    """
-    Reviewer Agent
 
-    Responsibilities:
-        - Evaluate generated report quality
-        - Provide structured feedback
-        - Decide whether revision is needed
-
-    Input (from ResearchState):
-        - draft_report (str)
-        - revision_count (int)
-
-    Output (to ResearchState):
-        - review_feedback (ReviewFeedback)
-        - final_report (str) [if approved OR max revisions reached]
-        - revision_count (int)
-    """
-
-    MAX_REVISIONS = 2
+    MAX_REVISIONS = 1
 
     def __init__(self, llm: ChatGroq) -> None:
-        """
-        Initialize ReviewerAgent with system prompt.
 
-        Args:
-            llm (ChatGroq): Shared LLM instance
-
-        Raises:
-            CustomException: If initialization fails
-        """
-                
         try:
-            logging.info("Initializing ReviewerAgent...")
+            logging.info("Initializing ReviewerAgent")
 
             super().__init__(llm, _REVIEWER_PROMPT)
 
-            logging.info("ReviewerAgent initialized successfully.")
+            logging.info("ReviewerAgent initialized.")
 
         except Exception as e:
-            logging.exception("Error initializing ReviewerAgent.")
+            logging.exception(
+                "ReviewerAgent initialization failed."
+            )
+
             raise CustomException(e, sys)
 
     def execute(self, state: ResearchState) -> Dict[str, Any]:
-        """
-        Review the generated report and decide next step.
-
-        Args:
-            state (ResearchState): Workflow state
-
-        Returns:
-            Dict[str, Any]:
-                {
-                    "review_feedback": ReviewFeedback,
-                    "final_report": str (optional),
-                    "revision_count": int
-                }
-
-        Raises:
-            CustomException: If execution fails
-        """
 
         try:
             logging.info("REVIEWER AGENT START")
 
-            # Validate input
-            report: str = state.get("draft_report", "")
-            revision_count: int = state.get("revision_count", 0)
+            report = state.get(
+                "draft_report",
+                ""
+            )
 
-            if not report or not report.strip():
-                raise ValueError("Draft report not found or empty")
+            revision_count = state.get(
+                "revision_count",
+                0
+            )
 
-            logging.info("Reviewing report | Length = %d | RevisionCount = %d", len(report), revision_count)
-           
-            # Run LLM review
-            response: str = self.run(report)
+            if not report:
+                raise ValueError(
+                    "Draft report missing."
+                )
 
-            logging.info("LLM review response received.")
+            # Keep report short for review
+            review_text = report[:5000]
 
-            # Parse JSON response
+            # Run review
+            response = self.run(review_text)
+
+            # Default feedback
+            feedback = {
+                "approved": True,
+                "overall_score": 7,
+                "suggestions": []
+            }
+
             try:
-                feedback: ReviewFeedback = json.loads(response)
+                parsed = json.loads(response)
 
-                # Basic validation
-                if not isinstance(feedback, dict):
-                    raise ValueError("Parsed feedback is not a dictionary.")
+                feedback["approved"] = parsed.get(
+                    "approved",
+                    True
+                )
 
-                feedback.setdefault("approved", False)
-                feedback.setdefault("issues", [])
-                feedback.setdefault("suggestions", [])
-                feedback.setdefault("overall_score", 0)
+                feedback["overall_score"] = parsed.get(
+                    "overall_score",
+                    7
+                )
 
-                logging.info("Review feedback parsed successfully.")
+                feedback["suggestions"] = parsed.get(
+                    "suggestions",
+                    []
+                )[:3]
 
-            except Exception as parse_error:
-                logging.warning("Failed to parse review JSON. Using fallback. Error: %s", str(parse_error))
+            except Exception:
+                logging.warning(
+                    "Failed to parse review response."
+                )
 
-                feedback = {
-                    "approved": False,
-                    "issues": ["Failed to parse LLM response"],
-                    "suggestions": ["Retry review or improve prompt formatting"],
-                    "overall_score": 5
-                }
+            # Final decision
+            if (
+                feedback["approved"]
+                or revision_count >= self.MAX_REVISIONS
+            ):
 
-            approved: bool = feedback.get("approved", False)
-            score: int = feedback.get("overall_score", 0)
-
-            logging.info("Review Result | Approved=%s | Score=%d", approved, score)
-
-             # Decision Logic
-            if approved:
-                logging.info("Report approved. Finalizing report.")
-
-                return {
-                    "review_feedback": feedback,
-                    "final_report": report,
-                    "revision_count": revision_count
-                }
-            
-            if revision_count >= self.MAX_REVISIONS:
-                logging.warning("Max revisions reached. Accepting current report.")
+                logging.info(
+                    "Finalizing report."
+                )
 
                 return {
                     "review_feedback": feedback,
@@ -165,8 +122,10 @@ class ReviewerAgent(BaseAgent):
                     "revision_count": revision_count
                 }
 
-            # Needs revision
-            logging.info("Report requires revision. Routing back to WriterAgent.")
+            # Request rewrite
+            logging.info(
+                "Revision required."
+            )
 
             return {
                 "review_feedback": feedback,
@@ -174,5 +133,8 @@ class ReviewerAgent(BaseAgent):
             }
 
         except Exception as e:
-            logging.exception("Error during ReviewerAgent execution.")
+            logging.exception(
+                "Error during ReviewerAgent execution."
+            )
+
             raise CustomException(e, sys)

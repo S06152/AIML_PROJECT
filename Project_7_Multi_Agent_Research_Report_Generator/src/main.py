@@ -8,6 +8,8 @@ from src.report.pdf_generator import PDFGenerator
 import warnings
 warnings.filterwarnings("ignore")
 
+MAX_REPORT_CHARS = 25000
+
 class Load_Multi_Agent_Research_Report_Generator:
     """
     Main Orchestrator Class for Multi-Agent Research & Report Generator
@@ -106,45 +108,48 @@ class Load_Multi_Agent_Research_Report_Generator:
             logging.exception("ERROR during multi-agent workflow execution.")
             raise CustomException(e,sys)
     
-        def _render_output(self, result: dict) -> None:
-            """
-            Render final report and provide PDF download.
+    def _render_output(self, result: dict) -> None:
+        """
+        Render final report and provide PDF download.
 
-            Args:
-                result (dict): Final workflow output
-            """
-            try:
-                logging.info("Rendering final output...")
+        Args:
+            result (dict): Final workflow output
+        """
+        try:
+            logging.info("Rendering final output...")
 
-                # Safely fetch report
-                final_report = result.get("final_report") or result.get("draft_report")
+            # Safely fetch report
+            final_report = result.get("final_report") or result.get("draft_report")
 
-                if not final_report:
-                    logging.warning("No report found in workflow result.")
-                    st.warning("⚠️ No report generated. Please try again.")
-                    return
+            if not final_report:
+                logging.warning("No report found in workflow result.")
+                st.warning("⚠️ No report generated. Please try again.")
+                return
 
-                logging.info("Report ready | Length = %d", len(final_report))
+            # Token / UI safety guard
+            final_report = final_report[:MAX_REPORT_CHARS]
 
-                # Display Report
-                st.subheader("📄 Generated Research Report")
-                st.markdown(final_report)
+            logging.info("Report ready | Length = %d", len(final_report))
 
-                # Generate PDF
-                logging.info("Generating PDF...")
-                pdf_buffer = PDFGenerator.generate_pdf(final_report)
+            # Display Report
+            st.subheader("📄 Generated Research Report")
+            st.markdown(final_report)
 
-                # Download Button
-                st.download_button(
-                    label = "⬇️ Download Report as PDF",
-                    data = pdf_buffer,
-                    file_name = "research_report.pdf",
-                    mime = "application/pdf"
-                )
+            # Generate PDF
+            logging.info("Generating PDF...")
+            pdf_buffer = PDFGenerator.generate_pdf(final_report)
 
-                logging.info("PDF download ready.")
+            # Download Button
+            st.download_button(
+                label = "⬇️ Download Report as PDF",
+                data = pdf_buffer,
+                file_name = "research_report.pdf",
+                mime = "application/pdf"
+            )
 
-            except Exception as e:
-                logging.exception("ERROR while rendering output.")
-                raise CustomException(e, sys)
+            logging.info("PDF download ready.")
+
+        except Exception as e:
+            logging.exception("ERROR while rendering output.")
+            raise CustomException(e, sys)
                 

@@ -13,6 +13,8 @@ from langgraph.graph import StateGraph, START, END
 import warnings
 warnings.filterwarnings("ignore")
 
+MAX_REVISIONS = 1
+
 # Routing Logic After Review Agent
 def route_after_review(state: Dict[str, Any]) -> str:
     """
@@ -25,18 +27,21 @@ def route_after_review(state: Dict[str, Any]) -> str:
     try:
         logging.info("Evaluating review feedback for routing...")
 
-        feedback = state.get("review_feedback")
+        feedback = state.get("review_feedback", {})
+        revision_count = state.get("revision_count", 0)
 
-        if not feedback:
-            logging.warning("No review feedback found → Ending workflow.")
+        # Hard stop for token safety
+        if revision_count >= MAX_REVISIONS:
+            logging.info("Max revisions reached.")
             return "end"
 
-        if not feedback.get("approved", False):
-            logging.info("Review NOT approved → Routing back to writer.")
-            return "rewrite"
+        # Reviewer approved
+        if feedback.get("approved", False):
+            return "end"
 
+        # One rewrite allowed
         logging.info("Review approved → Ending workflow.")
-        return "end"
+        return "rewrite"
 
     except Exception:
         logging.exception("Error in routing logic → Defaulting to END.")
@@ -143,7 +148,7 @@ class GraphBuilder:
                 route_after_review,
                 {
                     "rewrite": "write",
-                    "end": END,
+                    "end": END
                 }
             )
 
@@ -188,7 +193,7 @@ class GraphBuilder:
                 "review_feedback": None,
                 "revision_count": 0,
                 "errors": [],
-                "messages": [],
+                "messages": []
             }
 
             logging.info("Invoking workflow graph...")
@@ -197,7 +202,13 @@ class GraphBuilder:
             logging.info("Workflow executed successfully.")
             logging.info("WORKFLOW EXECUTION END")
 
-            return final_state
+            # Return ONLY essential outputs
+            return {
+                "final_report": (
+                    final_state.get("final_report")
+                    or final_state.get("draft_report")
+                )
+            }
 
         except Exception as e:
             logging.exception("ERROR during workflow execution.")
