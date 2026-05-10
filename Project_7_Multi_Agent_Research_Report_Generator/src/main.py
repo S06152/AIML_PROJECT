@@ -8,7 +8,7 @@ from src.report.pdf_generator import PDFGenerator
 import warnings
 warnings.filterwarnings("ignore")
 
-MAX_REPORT_CHARS = 25000
+MAX_REPORT_CHARS = 60000
 
 class Load_Multi_Agent_Research_Report_Generator:
     """

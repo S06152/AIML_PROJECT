@@ -16,13 +16,20 @@ warnings.filterwarnings("ignore")
 _EXTRACTION_PROMPT = """
 Extract important insights from the research text.
 
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON in this format (no commentary, no markdown fences):
 
 {{
-  "key_points": ["point 1", "point 2"],
-  "statistics": ["stat 1", "stat 2"],
-  "source_urls": ["url1", "url2"]
+  "key_points": ["detailed point 1", "detailed point 2", "..."],
+  "statistics": ["stat with number/year/source 1", "..."],
+  "source_urls": ["url1", "url2", "..."]
 }}
+
+Rules:
+- Provide 8 to 10 key_points (each 1-2 sentences, specific & informative).
+- Provide 5 to 10 statistics with concrete numbers, percentages, dates,
+  or named sources whenever possible.
+- Include up to 10 source_urls actually present in the text.
+- Do NOT invent facts. Use only the provided research text.
 """
 
 
@@ -55,8 +62,8 @@ class ExtractionAgent(BaseAgent):
             if not research_text:
                 raise ValueError("No research text found.")
 
-            # Keep text short
-            research_text = research_text[:4000]
+            # Keep text generous but bounded
+            research_text = research_text[:10000]
 
             # Run LLM
             response = self.run(research_text)
@@ -69,22 +76,29 @@ class ExtractionAgent(BaseAgent):
             }
 
             try:
-                parsed = json.loads(response)
+                # Strip possible markdown code fences
+                cleaned = response.strip()
+                if cleaned.startswith("```"):
+                    cleaned = cleaned.strip("`")
+                    # remove leading "json" tag if present
+                    if cleaned.lower().startswith("json"):
+                        cleaned = cleaned[4:]
+                parsed = json.loads(cleaned)
 
                 extracted_data["key_points"] = parsed.get(
                     "key_points",
                     []
-                )[:5]
+                )[:10]
 
                 extracted_data["statistics"] = parsed.get(
                     "statistics",
                     []
-                )[:5]
+                )[:10]
 
                 extracted_data["source_urls"] = parsed.get(
                     "source_urls",
                     []
-                )[:5]
+                )[:10]
 
             except Exception:
                 logging.warning(

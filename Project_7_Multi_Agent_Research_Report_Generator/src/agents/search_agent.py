@@ -83,8 +83,8 @@ class SearchAgent(BaseAgent):
         
             logging.info("Executing %d queries", len(queries))
 
-            # Keep only 2 queries
-            queries = queries[:2]
+            # Keep up to 4 queries
+            queries = queries[:4]
 
             all_results: List[SearchResult] = []
             
@@ -101,15 +101,15 @@ class SearchAgent(BaseAgent):
 
                 results = self._search_tool.search(
                     query,
-                    max_results=2
+                    max_results=4
                 )
 
                 for item in results:
 
-                    # Store lightweight result
+                    # Store richer result
                     result = {
-                        "title": item.get("title", "")[:100],
-                        "snippet": item.get("snippet", "")[:300],
+                        "title": item.get("title", "")[:200],
+                        "snippet": item.get("snippet", "")[:800],
                         "url": item.get("url", "")
                     }
 
@@ -117,12 +117,14 @@ class SearchAgent(BaseAgent):
 
                     # Build compressed text
                     compressed_research += (
+                        f"Query: {query}\n"
                         f"Title: {result['title']}\n"
-                        f"Summary: {result['snippet']}\n\n"
+                        f"Summary: {result['snippet']}\n"
+                        f"URL: {result['url']}\n\n"
                     )
 
-            # Keep compressed research short
-            compressed_research = compressed_research[:3000]
+            # Keep compressed research generous but bounded
+            compressed_research = compressed_research[:10000]
 
             logging.info(
                 "Total Results=%d",

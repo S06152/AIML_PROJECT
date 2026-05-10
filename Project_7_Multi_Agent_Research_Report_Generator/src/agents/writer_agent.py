@@ -13,16 +13,69 @@ warnings.filterwarnings("ignore")
 
 
 _WRITER_PROMPT = """
-You are a Research Report Writer.
+You are a Senior Research Report Writer.
 
-Generate a SHORT professional report using the provided data.
+Goal:
+Produce a DETAILED, professional, multi-section research report in Markdown
+that will fill at least 4 printed pages (target ~2500-3500 words).
 
-Rules:
-- Keep report concise
-- Use markdown headings
-- Use only provided information
-- Avoid repetition
-- Keep report under 1000 words
+You will be given:
+- The research topic
+- The research plan
+- Extracted key points
+- Statistics
+- Source URLs
+
+Strict structure (use these EXACT markdown headings, in this order):
+
+# {{Report Title based on the topic}}
+
+## 1. Executive Summary
+A concise 150-250 word overview of the topic, why it matters, and the
+most important takeaways from the report.
+
+## 2. Introduction
+Define the topic, scope, and context. Explain why it is relevant in 2025-2026.
+At least 2 well-developed paragraphs.
+
+## 3. Background and Context
+Historical evolution, major milestones, and the broader landscape.
+At least 2 paragraphs.
+
+## 4. Key Findings
+Present 6-10 detailed findings as a bulleted list. Each bullet must be a
+full, informative sentence (NOT one or two words). Use the provided
+key points and elaborate on them.
+
+## 5. Statistical Insights
+Present the provided statistics as a bulleted list. For each statistic add
+a one-sentence interpretation explaining its significance.
+
+## 6. Detailed Analysis
+A multi-paragraph analytical discussion connecting the findings and
+statistics. Use 3-5 paragraphs. You MAY use ### sub-headings such as
+"### Market Dynamics", "### Technology Drivers", "### Stakeholders" etc.
+
+## 7. Challenges and Risks
+Bulleted list of 5-8 challenges, risks, or open issues, each explained
+in 1-2 sentences.
+
+## 8. Future Outlook
+Forward-looking discussion (2-3 paragraphs) of trends, opportunities,
+and predictions for the next 1-5 years.
+
+## 9. Conclusion
+A strong closing summary (1-2 paragraphs) that ties everything together.
+
+## 10. References
+A numbered list of the source URLs provided. Format each as:
+1. https://example.com
+
+Hard rules:
+- Output ONLY the Markdown report (no preamble, no code fences).
+- Use ONLY the information provided; do not fabricate URLs or numbers.
+- Be substantive and specific; avoid filler and repetition.
+- Aim for ~2500-3500 words total.
 """
 
 
@@ -56,36 +109,51 @@ class WriterAgent(BaseAgent):
                     "No extracted data found."
                 )
 
-            # Keep only limited data
+            topic = state.get("topic", "").strip()
+            research_plan = state.get("research_plan", "")
+
+            # Keep more data this time
             key_points = extracted_data.get(
                 "key_points",
                 []
-            )[:5]
+            )[:10]
 
             statistics = extracted_data.get(
                 "statistics",
                 []
-            )[:5]
+            )[:10]
 
             sources = extracted_data.get(
                 "source_urls",
                 []
-            )[:5]
+            )[:10]
 
-            # Compact input
+            # Format inputs as readable bullet lists
+            kp_text = "\n".join(f"- {p}" for p in key_points) or "- (none)"
+            stat_text = "\n".join(f"- {s}" for s in statistics) or "- (none)"
+            src_text = "\n".join(f"- {u}" for u in sources) or "- (none)"
+
             input_text = f"""
-            Key Points:
-            {key_points}
+Topic:
+{topic}
 
-            Statistics:
-            {statistics}
+Research Plan:
+{research_plan}
 
-            Sources:
-            {sources}
-            """
+Key Points:
+{kp_text}
 
-            # Prevent token overflow
-            input_text = input_text[:4000]
+Statistics:
+{stat_text}
+
+Sources:
+{src_text}
+
+Now write the full multi-section report following the required structure.
+"""
+
+            # Allow a richer prompt
+            input_text = input_text[:10000]
 
             # Generate report
             report = self.run(input_text)
@@ -93,8 +161,8 @@ class WriterAgent(BaseAgent):
             if not report:
                 report = "Report generation failed."
 
-            # Final hard limit
-            report = report[:12000]
+            # Final hard limit (large enough for 4+ pages)
+            report = report[:30000]
 
             logging.info(
                 "Report generated successfully."

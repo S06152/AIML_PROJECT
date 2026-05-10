@@ -18,8 +18,8 @@ class BaseAgent:
         - Build reusable LangChain pipeline
         - Execute LLM calls and return parsed output
     """
-    MAX_INPUT_CHARS = 6000
-    MAX_OUTPUT_CHARS = 12000
+    MAX_INPUT_CHARS = 12000
+    MAX_OUTPUT_CHARS = 24000
     
     def __init__(self, llm: ChatGroq, system_prompt: str) -> None:
         """
@@ -47,7 +47,7 @@ class BaseAgent:
             self._llm: ChatGroq = llm
 
             # Store system prompt for later execution
-            self._system_prompt: str = system_prompt.strip()[:2000]
+            self._system_prompt: str = system_prompt.strip()[:4000]
 
             # Build chain once (performance optimization)
             self._chain = self._build_chain()

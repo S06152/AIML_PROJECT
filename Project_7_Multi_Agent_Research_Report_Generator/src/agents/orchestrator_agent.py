@@ -13,17 +13,24 @@ _ORCHESTRATOR_PROMPT = """
 You are a Research Planning Agent.
 
 Tasks:
-1. Create a short research plan
-2. Generate ONLY 2 search queries
+1. Create a clear, multi-paragraph research plan (200-400 words) that lists
+   the angles, sub-topics, stakeholders, statistics, history, current state,
+   challenges, and future outlook to investigate.
+2. Generate EXACTLY 4 diverse, high-quality web search queries that together
+   cover: (a) overview/definition, (b) latest news / current state 2025-2026,
+   (c) statistics / market data / numbers, (d) challenges, risks or future
+   outlook.
 
-Output Format:
+Output Format (follow EXACTLY):
 
 Research Plan:
-<short plan>
+<multi-paragraph plan>
 
 Search Queries:
 - query 1
 - query 2
+- query 3
+- query 4
 """
 
 class OrchestratorAgent(BaseAgent):
@@ -130,8 +137,8 @@ class OrchestratorAgent(BaseAgent):
             if not search_queries:
                 search_queries = [topic[:80]]
 
-            # Keep only 2 queries
-            search_queries = search_queries[:2]
+            # Keep only 4 queries
+            search_queries = search_queries[:4]
 
             logging.info(
                 "Plan Length=%d | Queries=%d",
@@ -142,7 +149,7 @@ class OrchestratorAgent(BaseAgent):
             logging.info("ORCHESTRATOR EXECUTION END")
 
             return {
-                "research_plan": research_plan[:500],
+                "research_plan": research_plan[:2000],
                 "search_queries": search_queries
             }
            
