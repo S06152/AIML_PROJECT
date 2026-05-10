@@ -8,9 +8,6 @@ from langchain_core.prompts import ChatPromptTemplate
 import warnings
 warnings.filterwarnings("ignore")
 
-MAX_INPUT_CHARS = 6000
-MAX_OUTPUT_CHARS = 12000
-
 class BaseAgent:
     """
     Base class for all agents in the Multi-Agent Research & Report Generator.
@@ -21,7 +18,9 @@ class BaseAgent:
         - Build reusable LangChain pipeline
         - Execute LLM calls and return parsed output
     """
-
+    MAX_INPUT_CHARS = 6000
+    MAX_OUTPUT_CHARS = 12000
+    
     def __init__(self, llm: ChatGroq, system_prompt: str) -> None:
         """
         Initialize BaseAgent with LLM and system prompt.
