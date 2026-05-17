@@ -152,20 +152,21 @@ class EmbeddingManager:
 
             with torch.no_grad():
 
-                text_features = (
-                    cls._clip_model.get_text_features(
-                        **inputs
-                    )
+                text_features = cls._clip_model.get_text_features(
+                    **inputs
                 )
+                # If output is not a tensor, get the tensor (for compatibility)
+                if not isinstance(text_features, torch.Tensor):
+                    # Try common attributes
+                    if hasattr(text_features, "pooler_output"):
+                        text_features = text_features.pooler_output
+                    elif hasattr(text_features, "last_hidden_state"):
+                        text_features = text_features.last_hidden_state
+                    else:
+                        raise CustomException("Unknown output type from get_text_features", sys)
 
                 # Normalize embeddings
-                text_features = (
-                    text_features
-                    / text_features.norm(
-                        dim=-1,
-                        keepdim=True,
-                    )
-                )
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
             return (
                 text_features
