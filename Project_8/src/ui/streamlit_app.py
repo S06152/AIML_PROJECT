@@ -2,6 +2,7 @@
 import sys
 import warnings
 from typing import Optional
+import os
 
 # Third-Party Imports
 import numpy as np
@@ -527,3 +528,16 @@ class StreamlitApp:
                 "Error while generating response."
             )
             raise CustomException(e, sys)
+
+# Add this at the bottom of your main Streamlit script (e.g., app.py or streamlit_app.py)
+log_file_path = "app.log"  # Update this if your log file has a different name or path
+if os.path.exists(log_file_path):
+    with open(log_file_path, "rb") as log_file:
+        st.download_button(
+            label="Download Log File",
+            data=log_file,
+            file_name="app.log",
+            mime="text/plain"
+        )
+else:
+    st.info("Log file not found.")
