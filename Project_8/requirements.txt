@@ -11,5 +11,6 @@ pdfplumber
 langchain-huggingface
 sentence-transformers
 torch
+torchvision
 pillow
 numpy
