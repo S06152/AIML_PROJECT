@@ -15,11 +15,12 @@ from src.utils.exception import CustomException
 
 class EmbeddingManager:
 
-    def embed_query(self, text: str) -> np.ndarray:
+    def embed_query(self, text: str) -> list:
         """
         LangChain compatibility: Embed a query string for vector search.
+        Returns a list for Pinecone serialization.
         """
-        return self.embed_text(text)
+        return self.embed_text(text).tolist()
     """
     Multi-Modal Embedding Manager using CLIP.
 
