@@ -14,6 +14,12 @@ from src.utils.exception import CustomException
 
 
 class EmbeddingManager:
+
+    def embed_query(self, text: str) -> np.ndarray:
+        """
+        LangChain compatibility: Embed a query string for vector search.
+        """
+        return self.embed_text(text)
     """
     Multi-Modal Embedding Manager using CLIP.
 
