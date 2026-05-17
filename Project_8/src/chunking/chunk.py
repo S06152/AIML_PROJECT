@@ -110,46 +110,25 @@ class ChunkingStrategy:
         all_documents = []
         all_embeddings = []
 
+
         try:
-            logging.info(
-                "Starting multi-modal chunking pipeline."
-            )
-
+            logging.info("Starting multi-modal chunking pipeline.")
             for index, document in enumerate(documents):
-
-                modality = document.metadata.get(
-                    "modality",
-                    "text",
-                )
-
-                # ===================================================
+                modality = document.metadata.get("modality", "text")
                 # TEXT DOCUMENT PROCESSING
-                # ===================================================
                 if modality == "text":
-
-                    logging.info(
-                        f"Processing text document: {index}"
-                    )
-
-                    text_chunks = self.splitter.split_documents(
-                        [document]
-                    )
-
+                    logging.info(f"Processing text document: {index}")
+                    text_chunks = self.splitter.split_documents([document])
                     for chunk in text_chunks:
-
-                        # Generate text embedding
-                        embedding = (
-                            EmbeddingManager.embed_text(
-                                chunk.page_content
-                            )
-                        )
-
-                        chunk.metadata["embedding_type"] = (
-                            "text_embedding"
-                        )
-
+                        embedding = EmbeddingManager.embed_text(chunk.page_content)
+                        chunk.metadata["embedding_type"] = "text_embedding"
                         all_documents.append(chunk)
                         all_embeddings.append(embedding)
+                        logging.info(f"Chunk content: {chunk.page_content[:100]} ... Metadata: {chunk.metadata}")
+                        if hasattr(embedding, 'shape'):
+                            logging.info(f"Embedding shape: {embedding.shape}, type: {type(embedding)}")
+                        else:
+                            logging.info(f"Embedding type: {type(embedding)}")
 
                 # ===================================================
                 # TABLE DOCUMENT PROCESSING
