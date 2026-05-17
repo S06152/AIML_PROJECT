@@ -6,4 +6,4 @@ langchain-text-splitters
 pypdf
 pinecone
 langchain-pinecone
-
+PyMuPDF
