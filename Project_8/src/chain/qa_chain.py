@@ -123,46 +123,24 @@ class QAChain:
         Returns:
             str
         """
-
         try:
             logging.info(f"Formatting {len(docs)} documents.")
-
             if not docs:
-
+                logging.warning("No relevant context retrieved from the uploaded document. This may indicate a retrieval or embedding issue.")
                 return (
                     "No relevant context retrieved "
                     "from the uploaded document."
                 )
-
+            for i, doc in enumerate(docs):
+                logging.info(f"Retrieved Doc {i}: {doc.page_content[:100]} ... Metadata: {doc.metadata}")
             formatted_context = []
-
             for index, doc in enumerate(docs):
-
-                metadata = doc.metadata or {}
-                source = metadata.get("source", "Uploaded PDF")
-                page = metadata.get("page", "N/A")
-                modality = metadata.get("modality", "text")
-
-                formatted_doc = f"""
-                    ==================================================
-                    DOCUMENT {index + 1}
-                    ==================================================
-                    Source   : {source}
-                    Page     : {page}
-                    Modality : {modality}
-
-                    CONTENT:
-                    {doc.page_content}
-                """
-
-                formatted_context.append(formatted_doc.strip())
-
-            final_context = "\n\n".join(formatted_context )
-
+                formatted_context.append(
+                    f"[Doc {index+1}]\n{doc.page_content}\n"
+                )
+            final_context = "\n".join(formatted_context)
             logging.info("Document formatting completed.")
-
             return final_context
-
         except Exception as e:
             logging.exception("Error while formatting documents.")
             raise CustomException(e, sys)

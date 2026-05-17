@@ -300,39 +300,29 @@ class StreamlitApp:
                 ],
             )
 
-            chunks, embeddings = (
-                chunker.split_documents_into_chunks(
-                    documents
-                )
-            )
-
-            logging.info(
-                f"Generated {len(chunks)} chunks."
-            )
+            chunks, embeddings = chunker.split_documents_into_chunks(documents)
+            logging.info(f"Generated {len(chunks)} chunks.")
+            for i, chunk in enumerate(chunks):
+                logging.info(f"Chunk {i}: {chunk.page_content[:100]} ... Metadata: {chunk.metadata}")
 
             # --------------------------------------------------
             # STEP 3: PREPARE PINECONE DATA
             # --------------------------------------------------
             vector_records = []
 
-            for doc, embedding in zip(
-                chunks,
-                embeddings,
-            ):
-
+            for doc, embedding in zip(chunks, embeddings):
+                if hasattr(embedding, 'tolist'):
+                    embedding = embedding.tolist()
                 vector_records.append(
                     {
                         "text": doc.page_content,
-                        "embedding": np.array(
-                            embedding
-                        ).tolist(),
+                        "embedding": embedding,
                         "metadata": doc.metadata,
                     }
                 )
-
-            logging.info(
-                "Prepared vector records for Pinecone."
-            )
+            logging.info(f"Prepared {len(vector_records)} vector records for Pinecone.")
+            for i, record in enumerate(vector_records):
+                logging.info(f"Vector {i}: Embedding length: {len(record['embedding'])}, Text: {record['text'][:100]} ...")
 
             # --------------------------------------------------
             # STEP 4: STORE IN PINECONE
