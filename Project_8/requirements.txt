@@ -8,3 +8,8 @@ pinecone
 langchain-pinecone
 PyMuPDF
 pdfplumber
+langchain-huggingface
+sentence-transformers
+torch
+pillow
+numpy
