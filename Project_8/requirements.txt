@@ -7,3 +7,4 @@ pypdf
 pinecone
 langchain-pinecone
 PyMuPDF
+pdfplumber
