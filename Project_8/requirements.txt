@@ -11,7 +11,7 @@ langchain-text-splitters
 langchain-groq
 chromadb
 torchvision
-
+protobuf==3.20.3
 
 
 
