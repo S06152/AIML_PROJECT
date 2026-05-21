@@ -1,28 +1,43 @@
 # ============================================================
-#  MULTIMODAL RAG PIPELINE — STREAMLIT APP
-#  Text + Tables + Images from PDFs
+# MULTIMODAL RAG FOR PDF QA (ENTERPRISE QUALITY)
+# ============================================================
 #
-#  STACK:
-#  - LangChain
-#  - ChromaDB
-#  - Groq LLM
-#  - HuggingFace Embeddings
-#  - BLIP Image Captioning
+# FEATURES
+# --------
+# ✅ Better Retrieval Quality
+# ✅ Better Prompt Engineering
+# ✅ Cleaner Answers
+# ✅ Technical Specification Optimized
+# ✅ AUTOSAR / API / ISO Document Friendly
+# ✅ Text + Tables + Images
+# ✅ Groq LLM
+# ✅ ChromaDB
+# ✅ BLIP Image Captioning
+# ✅ HuggingFace Embeddings
 #
-#  RUN:
-#     streamlit run app.py
+# RUN:
+# -----
+# streamlit run app.py
 #
-#  REQUIREMENTS:
-#     pip install streamlit pymupdf pdfplumber pillow torch
-#     pip install transformers chromadb sentence-transformers
-#     pip install langchain langchain-core langchain-community
-#     pip install langchain-text-splitters langchain-chroma
-#     pip install langchain-groq
+# REQUIREMENTS:
+# -------------
+# pip install streamlit pymupdf pdfplumber pillow
+# pip install torch torchvision torchaudio
+# pip install transformers sentence-transformers
+# pip install chromadb
+# pip install langchain langchain-core
+# pip install langchain-community
+# pip install langchain-text-splitters
+# pip install langchain-chroma
+# pip install langchain-groq
+# pip install protobuf==3.20.3
 #
-#  STREAMLIT SECRETS:
-#     .streamlit/secrets.toml
+# STREAMLIT SECRET:
+# -----------------
+# .streamlit/secrets.toml
 #
-#     GROQ_API_KEY="your_api_key"
+# GROQ_API_KEY="your_api_key"
+#
 # ============================================================
 
 import os
@@ -62,21 +77,22 @@ from transformers import (
 # ============================================================
 
 st.set_page_config(
-    page_title="Multimodal RAG",
+    page_title="Enterprise Multimodal RAG",
     page_icon="🧠",
     layout="wide"
 )
 
 # ============================================================
-# CUSTOM CSS
+# CSS
 # ============================================================
 
 st.markdown("""
 <style>
+
 .main-header {
     font-size: 2.2rem;
     font-weight: 700;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.2rem;
 }
 
 .sub-header {
@@ -85,18 +101,19 @@ st.markdown("""
 }
 
 .answer-box {
-    background: #f3fdf5;
+    background: #f4fff5;
+    border: 1px solid #d4f5dd;
     padding: 1rem;
     border-radius: 10px;
-    border: 1px solid #d4f5dd;
+    font-size: 1rem;
 }
 
 .chunk-card {
     background: #fafafa;
+    border-left: 4px solid #2ecc71;
     padding: 0.8rem;
     border-radius: 8px;
-    border-left: 4px solid #2ecc71;
-    margin-bottom: 0.7rem;
+    margin-bottom: 0.8rem;
 }
 
 .chunk-meta {
@@ -104,6 +121,7 @@ st.markdown("""
     font-size: 0.8rem;
     margin-bottom: 0.4rem;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -153,10 +171,10 @@ def load_blip_model():
     return processor, model
 
 # ============================================================
-# IMAGE HELPERS
+# HELPERS
 # ============================================================
 
-def pil_to_base64(img: Image.Image):
+def pil_to_base64(img):
 
     buf = io.BytesIO()
 
@@ -167,10 +185,28 @@ def pil_to_base64(img: Image.Image):
     ).decode()
 
 # ============================================================
+# REMOVE TOC / NOISE PAGES
+# ============================================================
+
+def is_noise_text(text):
+
+    text = text.lower()
+
+    patterns = [
+        "table of contents",
+        "contents",
+        "........",
+        ".........",
+        ".........."
+    ]
+
+    return any(p in text for p in patterns)
+
+# ============================================================
 # IMAGE CAPTIONING
 # ============================================================
 
-def caption_image_with_blip(pil_img: Image.Image):
+def caption_image_with_blip(pil_img):
 
     processor, model = load_blip_model()
 
@@ -197,7 +233,7 @@ def caption_image_with_blip(pil_img: Image.Image):
 # TEXT EXTRACTION
 # ============================================================
 
-def extract_text_chunks(pdf_path: str):
+def extract_text_chunks(pdf_path):
 
     doc = fitz.open(pdf_path)
 
@@ -207,7 +243,7 @@ def extract_text_chunks(pdf_path: str):
 
         text = page.get_text("text").strip()
 
-        if text:
+        if text and not is_noise_text(text):
 
             raw_docs.append(
                 Document(
@@ -222,8 +258,9 @@ def extract_text_chunks(pdf_path: str):
     doc.close()
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100
+        chunk_size=400,
+        chunk_overlap=50,
+        separators=["\n\n", "\n", ".", " "]
     )
 
     return splitter.split_documents(raw_docs)
@@ -232,7 +269,7 @@ def extract_text_chunks(pdf_path: str):
 # TABLE EXTRACTION
 # ============================================================
 
-def extract_table_chunks(pdf_path: str):
+def extract_table_chunks(pdf_path):
 
     chunks = []
 
@@ -262,15 +299,21 @@ def extract_table_chunks(pdf_path: str):
 
                 table_text = "\n".join(rows)
 
-                chunks.append(
-                    Document(
-                        page_content=table_text,
-                        metadata={
-                            "page": page_num + 1,
-                            "type": "table"
-                        }
+                if table_text.strip():
+
+                    chunks.append(
+                        Document(
+                            page_content=f"""
+TABLE CONTENT:
+
+{table_text}
+""",
+                            metadata={
+                                "page": page_num + 1,
+                                "type": "table"
+                            }
+                        )
                     )
-                )
 
     return chunks
 
@@ -278,7 +321,7 @@ def extract_table_chunks(pdf_path: str):
 # IMAGE EXTRACTION
 # ============================================================
 
-def extract_image_chunks(pdf_path: str):
+def extract_image_chunks(pdf_path):
 
     doc = fitz.open(pdf_path)
 
@@ -324,9 +367,10 @@ def extract_image_chunks(pdf_path: str):
                 chunks.append(
                     Document(
                         page_content=f"""
-                        IMAGE DESCRIPTION:
-                        {caption}
-                        """,
+IMAGE DESCRIPTION:
+
+{caption}
+""",
                         metadata={
                             "page": page_num + 1,
                             "type": "image"
@@ -334,8 +378,8 @@ def extract_image_chunks(pdf_path: str):
                     )
                 )
 
-            except Exception as e:
-                st.warning(f"Image skipped: {e}")
+            except Exception:
+                pass
 
     doc.close()
 
@@ -364,8 +408,8 @@ def build_vectorstore(all_docs):
 def create_retriever(vectorstore):
 
     retriever = vectorstore.as_retriever(
-        search_type="mmr",
-        search_kwargs={"k": 5}
+        search_type="similarity",
+        search_kwargs={"k": 3}
     )
 
     return retriever
@@ -397,18 +441,18 @@ def initialize_llm(
 def create_prompt():
 
     template = """
-You are a helpful assistant answering questions
-from a PDF document.
+You are an expert AUTOSAR specification assistant.
 
-The document may contain:
-- Text
-- Tables
-- Image descriptions
+Answer ONLY using the provided context.
 
-Use ONLY the context below.
-
-If answer not found, say:
-"I don't have enough information in this document."
+RULES:
+1. Give direct factual answers.
+2. Extract exact enum/table values when available.
+3. Never say "not found" if the answer exists.
+4. Prefer exact wording from the specification.
+5. Mention page numbers.
+6. Keep answers concise and professional.
+7. If answer comes from a table, explicitly say so.
 
 CONTEXT:
 {context}
@@ -416,10 +460,13 @@ CONTEXT:
 QUESTION:
 {question}
 
-INSTRUCTIONS:
-- Mention page numbers
-- Mention whether answer came from text/table/image
-- Be concise
+RESPONSE FORMAT:
+
+Answer:
+<direct answer>
+
+Source:
+<Page number and type>
 """
 
     prompt = ChatPromptTemplate.from_messages(
@@ -432,21 +479,28 @@ INSTRUCTIONS:
     return prompt
 
 # ============================================================
-# FORMAT DOCS
+# FORMAT DOCUMENTS
 # ============================================================
 
 def format_docs(docs: List[Document]):
 
     formatted = []
 
-    for doc in docs:
+    for i, doc in enumerate(docs, 1):
 
         page = doc.metadata.get("page", "?")
-
         dtype = doc.metadata.get("type", "text")
 
         formatted.append(
-            f"[Page {page} | Type: {dtype}]\n{doc.page_content}"
+            f"""
+DOCUMENT {i}
+
+Page: {page}
+Type: {dtype}
+
+CONTENT:
+{doc.page_content}
+"""
         )
 
     return "\n\n".join(formatted)
@@ -606,10 +660,10 @@ with st.sidebar:
     api_key = st.secrets.get("GROQ_API_KEY")
 
     if not api_key:
-        st.error("Add GROQ_API_KEY in .streamlit/secrets.toml")
+        st.error("Add GROQ_API_KEY to Streamlit secrets")
 
     model = st.selectbox(
-        "Select Groq Model",
+        "Groq Model",
         [
             "llama-3.3-70b-versatile",
             "qwen/qwen3-32b",
@@ -621,14 +675,14 @@ with st.sidebar:
         "Temperature",
         0.0,
         1.0,
-        0.2
+        0.1
     )
 
     max_tokens = st.slider(
         "Max Tokens",
         100,
         2000,
-        800
+        700
     )
 
     uploaded_file = st.file_uploader(
@@ -681,21 +735,12 @@ with st.sidebar:
 
             os.unlink(tmp_path)
 
-    # Stats
-    if st.session_state.doc_stats:
-
-        st.divider()
-
-        stats = st.session_state.doc_stats
-
-        st.write(stats)
-
 # ============================================================
 # MAIN UI
 # ============================================================
 
 st.markdown(
-    '<div class="main-header">🧠 Multimodal RAG Pipeline</div>',
+    '<div class="main-header">🧠 Enterprise Multimodal RAG</div>',
     unsafe_allow_html=True
 )
 
@@ -713,13 +758,19 @@ st.markdown(
 if st.session_state.qa_chain is None:
 
     st.info("""
-    ### How to Use
+### How to Use
 
-    1. Add GROQ API KEY to Streamlit secrets
-    2. Upload PDF
-    3. Click Process PDF
-    4. Ask questions
-    """)
+1. Add GROQ API KEY
+2. Upload PDF
+3. Process Document
+4. Ask Questions
+
+Optimized for:
+- AUTOSAR Docs
+- Technical Specifications
+- API Manuals
+- ISO Documents
+""")
 
 # ============================================================
 # CHAT HISTORY
@@ -744,7 +795,7 @@ for turn in st.session_state.chat_history:
 if st.session_state.qa_chain:
 
     question = st.chat_input(
-        "Ask question about PDF..."
+        "Ask question about the PDF..."
     )
 
     if question:
@@ -754,7 +805,7 @@ if st.session_state.qa_chain:
 
         with st.chat_message("assistant"):
 
-            with st.spinner("Thinking..."):
+            with st.spinner("Analyzing document..."):
 
                 try:
 
@@ -772,7 +823,7 @@ if st.session_state.qa_chain:
                     )
 
                     with st.expander(
-                        f"Sources ({len(sources)})"
+                        f"📘 Relevant Specification Sections ({len(sources)})"
                     ):
 
                         for doc in sources:
@@ -781,15 +832,16 @@ if st.session_state.qa_chain:
 
                             st.markdown(
                                 f"""
-                                <div class="chunk-card">
-                                    <div class="chunk-meta">
-                                        Page {meta.get("page")}
-                                        | {meta.get("type")}
-                                    </div>
+<div class="chunk-card">
 
-                                    {doc.page_content[:500]}
-                                </div>
-                                """,
+<div class="chunk-meta">
+Page {meta.get("page")} • {meta.get("type")}
+</div>
+
+{doc.page_content[:700]}
+
+</div>
+""",
                                 unsafe_allow_html=True
                             )
 
@@ -804,14 +856,14 @@ if st.session_state.qa_chain:
                     st.error(str(e))
 
 # ============================================================
-# IMAGE PREVIEWS
+# IMAGE PREVIEW
 # ============================================================
 
 if st.session_state.extracted_imgs:
 
     st.divider()
 
-    st.subheader("Extracted Images")
+    st.subheader("🖼 Extracted Images")
 
     for img in st.session_state.extracted_imgs:
 
@@ -821,7 +873,7 @@ if st.session_state.extracted_imgs:
         )
 
         st.caption(
-            f"Page {img['page']} | {img['caption']}"
+            f"Page {img['page']} • {img['caption']}"
         )
 
 # ============================================================
