@@ -449,15 +449,13 @@ Answer ONLY using the provided context.
 RULES:
 1. Give direct, technically precise answers.
 2. When asked for values (e.g., enums, constants), extract the exact value from tables or text. If not explicitly stated but can be inferred (e.g., next value after 0 is 1), state the value and mention it is inferred from context.
-3. For API parameters, always look for and output the exact C-style function signature if present in the context. List all parameters with their names and types if available. If not all are listed, state what is available and mention if any are inferred.
-4. For table-based questions, use the table headers and values as shown in the document.
-5. For diagrams or architecture, describe the structure and reference the diagram or page.
-6. For image-based questions, use the extracted image captions and descriptions.
-7. Always mention the source: page number and whether it is from a table, diagram, image, or text.
-8. If the answer comes from a table, diagram, image, or is inferred, explicitly say so.
-9. Use exact wording from the specification where possible.
-10. Never say "not found" if the answer can be inferred or partially answered from the context.
-11. Keep answers concise, professional, and technically accurate.
+3. For API parameters, list all parameters with their names and types if available. If not all are listed, state what is available and mention if any are inferred.
+4. For diagrams or architecture, describe the structure and reference the diagram or page.
+5. Always mention the source: page number and whether it is from a table, diagram, or text.
+6. If the answer comes from a table, diagram, or is inferred, explicitly say so.
+7. Use exact wording from the specification where possible.
+8. Never say "not found" if the answer can be inferred or partially answered from the context.
+9. Keep answers concise, professional, and technically accurate.
 
 CONTEXT:
 {context}
@@ -471,41 +469,8 @@ Answer:
 <direct, technically accurate answer>
 
 Source:
-<Page number and type (e.g., table, diagram, image, text, or inferred)>
+<Page number and type (e.g., table, diagram, text, or inferred)>
 """
-# ============================================================
-# FUNCTION SIGNATURE AND TABLE HEADER EXTRACTION
-# ============================================================
-
-import re
-
-def extract_function_signatures(text):
-    """
-    Extract C-style function signatures from a block of text.
-    Returns a list of signatures found.
-    """
-    # Only process if input is a string
-    if not isinstance(text, str):
-        return []
-    try:
-        pattern = r"^[a-zA-Z_][a-zA-Z0-9_\s\*]+\([a-zA-Z0-9_,\s\*\[\]\.]*(void)?\);"
-        matches = re.findall(pattern, text, re.MULTILINE)
-        return matches if matches else []
-    except Exception:
-        return []
-
-def extract_table_headers(table_text):
-    """
-    Extract table headers from a table chunk (first row).
-    Returns the header row if present.
-    """
-    lines = table_text.strip().splitlines()
-    if lines:
-        header = lines[0]
-        # Heuristic: header row usually has column names separated by |
-        if '|' in header:
-            return header
-    return None
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -523,27 +488,12 @@ def extract_table_headers(table_text):
 def format_docs(docs: List[Document]):
 
     formatted = []
-    all_signatures = []
-    all_table_headers = []
 
     for i, doc in enumerate(docs, 1):
+
         page = doc.metadata.get("page", "?")
         dtype = doc.metadata.get("type", "text")
-        content = doc.page_content
-        # Fully robust extraction of function signatures
-        signatures = []
-        if isinstance(content, str):
-            try:
-                signatures = extract_function_signatures(content)
-            except Exception:
-                signatures = []
-        if signatures:
-            all_signatures.extend([f"Page {page}: {sig}" for sig in signatures])
-        # Extract table headers if this is a table chunk
-        if dtype == "table":
-            header = extract_table_headers(content)
-            if header:
-                all_table_headers.append(f"Page {page}: {header}")
+
         formatted.append(
             f"""
 DOCUMENT {i}
@@ -552,18 +502,11 @@ Page: {page}
 Type: {dtype}
 
 CONTENT:
-{content}
+{doc.page_content}
 """
         )
 
-    # Prepend all found signatures and table headers to the context
-    context_blocks = []
-    if all_signatures:
-        context_blocks.append("FUNCTION SIGNATURES FOUND IN DOCUMENT:\n" + "\n".join(all_signatures))
-    if all_table_headers:
-        context_blocks.append("TABLE HEADERS FOUND IN DOCUMENT:\n" + "\n".join(all_table_headers))
-    context_blocks.append("\n\n".join(formatted))
-    return "\n\n".join(context_blocks)
+    return "\n\n".join(formatted)
 
 # ============================================================
 # RAG CHAIN
@@ -682,20 +625,16 @@ def process_pdf(
 
         st.session_state.extracted_imgs = previews
 
-    # Error handling: If no content was extracted, show error and abort
-    if not all_docs:
-        st.session_state.qa_chain = None
-        st.session_state.vectorstore = None
-        st.error("No extractable content (text, tables, or images) found in the uploaded PDF. Please check the document and try again.")
-        return
-
     # VECTORSTORE
     progress.progress(80)
+
     vectorstore = build_vectorstore(all_docs)
+
     st.session_state.vectorstore = vectorstore
 
     # QA CHAIN
     progress.progress(100)
+
     qa_chain = build_qa_chain(
         vectorstore=vectorstore,
         model_name=model_name,
@@ -703,7 +642,9 @@ def process_pdf(
         temperature=temperature,
         max_tokens=max_tokens
     )
+
     st.session_state.qa_chain = qa_chain
+
     st.session_state.doc_stats = {
         "text_chunks": len(text_chunks),
         "table_chunks": len(table_chunks),
@@ -854,30 +795,44 @@ for turn in st.session_state.chat_history:
 # CHAT INPUT
 # ============================================================
 
-if st.session_state.qa_chain is not None:
+if st.session_state.qa_chain:
+
     question = st.chat_input(
         "Ask question about the PDF..."
     )
+
     if question:
+
         with st.chat_message("user"):
             st.write(question)
+
         with st.chat_message("assistant"):
+
             with st.spinner("Analyzing document..."):
+
                 try:
+
                     result = st.session_state.qa_chain.invoke(
                         question
                     )
+
                     answer = result["answer"]
+
                     sources = result["source_documents"]
+
                     st.markdown(
                         f'<div class="answer-box">{answer}</div>',
                         unsafe_allow_html=True
                     )
+
                     with st.expander(
                         f"📘 Relevant Specification Sections ({len(sources)})"
                     ):
+
                         for doc in sources:
+
                             meta = doc.metadata
+
                             st.markdown(
                                 f"""
 <div class="chunk-card">
@@ -892,15 +847,16 @@ Page {meta.get("page")} • {meta.get("type")}
 """,
                                 unsafe_allow_html=True
                             )
+
                     st.session_state.chat_history.append({
                         "question": question,
                         "answer": answer,
                         "sources": sources
                     })
+
                 except Exception as e:
+
                     st.error(str(e))
-else:
-    st.warning("No QA chain available. Please upload and process a valid PDF document with extractable content (text, tables, or images) before asking questions.")
 
 # ============================================================
 # IMAGE PREVIEW
