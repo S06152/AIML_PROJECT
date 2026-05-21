@@ -645,20 +645,31 @@ def process_pdf(
 
     # TEXT
     progress.progress(20)
+
     text_chunks = extract_text_chunks(pdf_path)
+
     all_docs.extend(text_chunks)
 
     # TABLES
     progress.progress(40)
+
     table_chunks = extract_table_chunks(pdf_path)
+
     all_docs.extend(table_chunks)
 
     # IMAGES
     img_chunks = []
+
     if include_images:
+
         progress.progress(60)
-        img_chunks, previews = extract_image_chunks(pdf_path)
+
+        img_chunks, previews = extract_image_chunks(
+            pdf_path
+        )
+
         all_docs.extend(img_chunks)
+
         st.session_state.extracted_imgs = previews
 
     # Error handling: If no content was extracted, show error and abort
@@ -833,8 +844,6 @@ for turn in st.session_state.chat_history:
 # CHAT INPUT
 # ============================================================
 
-
-# Robust check: Only allow chat if QA chain is available
 if st.session_state.qa_chain is not None:
     question = st.chat_input(
         "Ask question about the PDF..."
@@ -880,6 +889,8 @@ Page {meta.get("page")} • {meta.get("type")}
                     })
                 except Exception as e:
                     st.error(str(e))
+else:
+    st.warning("No QA chain available. Please upload and process a valid PDF document with extractable content (text, tables, or images) before asking questions.")
 
 # ============================================================
 # IMAGE PREVIEW
