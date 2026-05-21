@@ -484,10 +484,15 @@ def extract_function_signatures(text):
     Extract C-style function signatures from a block of text.
     Returns a list of signatures found.
     """
-    # Simple regex for C function signatures (may be improved for edge cases)
-    pattern = r"^[a-zA-Z_][a-zA-Z0-9_\s\*]+\([a-zA-Z0-9_,\s\*\[\]\.]*(void)?\);"
-    matches = re.findall(pattern, text, re.MULTILINE)
-    return matches
+    # Only process if input is a string
+    if not isinstance(text, str):
+        return []
+    try:
+        pattern = r"^[a-zA-Z_][a-zA-Z0-9_\s\*]+\([a-zA-Z0-9_,\s\*\[\]\.]*(void)?\);"
+        matches = re.findall(pattern, text, re.MULTILINE)
+        return matches if matches else []
+    except Exception:
+        return []
 
 def extract_table_headers(table_text):
     """
@@ -525,10 +530,13 @@ def format_docs(docs: List[Document]):
         page = doc.metadata.get("page", "?")
         dtype = doc.metadata.get("type", "text")
         content = doc.page_content
-        # Extract function signatures from this chunk
-        signatures = extract_function_signatures(content)
-        if signatures:
-            all_signatures.extend([f"Page {page}: {sig}" for sig in signatures])
+        # Extract function signatures from this chunk (robust)
+        try:
+            signatures = extract_function_signatures(content)
+            if signatures:
+                all_signatures.extend([f"Page {page}: {sig}" for sig in signatures])
+        except Exception:
+            pass
         # Extract table headers if this is a table chunk
         if dtype == "table":
             header = extract_table_headers(content)
