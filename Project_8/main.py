@@ -456,6 +456,7 @@ RULES:
 7. Use exact wording from the specification where possible.
 8. Never say "not found" if the answer can be inferred or partially answered from the context.
 9. Keep answers concise, professional, and technically accurate.
+10. If the answer is not explicitly present in the provided context, state: "The answer is not specified in the provided context." Do not infer, guess, or use external knowledge.
 
 CONTEXT:
 {context}
