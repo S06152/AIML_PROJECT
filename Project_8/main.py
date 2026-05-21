@@ -530,13 +530,15 @@ def format_docs(docs: List[Document]):
         page = doc.metadata.get("page", "?")
         dtype = doc.metadata.get("type", "text")
         content = doc.page_content
-        # Extract function signatures from this chunk (robust)
-        try:
-            signatures = extract_function_signatures(content)
-            if signatures:
-                all_signatures.extend([f"Page {page}: {sig}" for sig in signatures])
-        except Exception:
-            pass
+        # Fully robust extraction of function signatures
+        signatures = []
+        if isinstance(content, str):
+            try:
+                signatures = extract_function_signatures(content)
+            except Exception:
+                signatures = []
+        if signatures:
+            all_signatures.extend([f"Page {page}: {sig}" for sig in signatures])
         # Extract table headers if this is a table chunk
         if dtype == "table":
             header = extract_table_headers(content)
