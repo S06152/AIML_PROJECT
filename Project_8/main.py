@@ -645,43 +645,36 @@ def process_pdf(
 
     # TEXT
     progress.progress(20)
-
     text_chunks = extract_text_chunks(pdf_path)
-
     all_docs.extend(text_chunks)
 
     # TABLES
     progress.progress(40)
-
     table_chunks = extract_table_chunks(pdf_path)
-
     all_docs.extend(table_chunks)
 
     # IMAGES
     img_chunks = []
-
     if include_images:
-
         progress.progress(60)
-
-        img_chunks, previews = extract_image_chunks(
-            pdf_path
-        )
-
+        img_chunks, previews = extract_image_chunks(pdf_path)
         all_docs.extend(img_chunks)
-
         st.session_state.extracted_imgs = previews
+
+    # Error handling: If no content was extracted, show error and abort
+    if not all_docs:
+        st.session_state.qa_chain = None
+        st.session_state.vectorstore = None
+        st.error("No extractable content (text, tables, or images) found in the uploaded PDF. Please check the document and try again.")
+        return
 
     # VECTORSTORE
     progress.progress(80)
-
     vectorstore = build_vectorstore(all_docs)
-
     st.session_state.vectorstore = vectorstore
 
     # QA CHAIN
     progress.progress(100)
-
     qa_chain = build_qa_chain(
         vectorstore=vectorstore,
         model_name=model_name,
@@ -689,9 +682,7 @@ def process_pdf(
         temperature=temperature,
         max_tokens=max_tokens
     )
-
     st.session_state.qa_chain = qa_chain
-
     st.session_state.doc_stats = {
         "text_chunks": len(text_chunks),
         "table_chunks": len(table_chunks),
@@ -842,44 +833,32 @@ for turn in st.session_state.chat_history:
 # CHAT INPUT
 # ============================================================
 
-if st.session_state.qa_chain:
 
+# Robust check: Only allow chat if QA chain is available
+if st.session_state.qa_chain is not None:
     question = st.chat_input(
         "Ask question about the PDF..."
     )
-
     if question:
-
         with st.chat_message("user"):
             st.write(question)
-
         with st.chat_message("assistant"):
-
             with st.spinner("Analyzing document..."):
-
                 try:
-
                     result = st.session_state.qa_chain.invoke(
                         question
                     )
-
                     answer = result["answer"]
-
                     sources = result["source_documents"]
-
                     st.markdown(
                         f'<div class="answer-box">{answer}</div>',
                         unsafe_allow_html=True
                     )
-
                     with st.expander(
                         f"📘 Relevant Specification Sections ({len(sources)})"
                     ):
-
                         for doc in sources:
-
                             meta = doc.metadata
-
                             st.markdown(
                                 f"""
 <div class="chunk-card">
@@ -894,15 +873,12 @@ Page {meta.get("page")} • {meta.get("type")}
 """,
                                 unsafe_allow_html=True
                             )
-
                     st.session_state.chat_history.append({
                         "question": question,
                         "answer": answer,
                         "sources": sources
                     })
-
                 except Exception as e:
-
                     st.error(str(e))
 
 # ============================================================
