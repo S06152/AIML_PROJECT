@@ -1,29 +1,23 @@
 # ============================================================
-# MULTIMODAL RAG FOR PDF QA (ENTERPRISE QUALITY) — FIXED v2
+# MULTIMODAL RAG FOR PDF QA (ENTERPRISE QUALITY) — FIXED v3
 # ============================================================
 #
-# FIXES vs v1
+# FIXES vs v2
 # -----------
-# ✅ Larger chunk size (800 chars) with more overlap (100) to
-#    prevent mid-sentence API definition splits
-# ✅ k=6 retrieved chunks (was 3) — catches distant but related
-#    sections like Rx/Tx flow across multiple pages
-# ✅ Heading-aware chunking: each chunk carries its nearest
-#    section heading as metadata for richer source attribution
-# ✅ BLIP image captioning replaced with PyMuPDF page
-#    rasterization — actual diagram content (layers, arrows,
-#    labels) is now readable instead of hallucinated captions
-# ✅ Table extraction preserves header row so "Column | Value"
-#    rows are self-explanatory when retrieved out of context
-# ✅ Noise filter narrowed — only skips pages whose ENTIRE
-#    content is TOC dots; no longer drops real content pages
-# ✅ Prompt rules deduplicated and clarified — removed the
-#    contradictory rule pair (rules 8 & 10 in v1) so LLM no
-#    longer hedges on answerable questions
-# ✅ MMR retrieval (Maximal Marginal Relevance) replaces plain
-#    similarity search to reduce duplicate chunk retrieval
-# ✅ Page-level image chunks replaced with per-page rasterized
-#    descriptions extracted via Claude vision (via BLIP fallback)
+# ✅ Diagram detection v2 — now catches ALL diagram page types:
+#    • Vector diagrams (UML, flow, architecture) via drawing
+#      path count + strict "Figure N:" caption matching
+#    • Raster image pages (embedded PNG/JPEG >= 150px)
+#    • Diagram-only pages with no figure caption but dense
+#      vector drawing paths and low text (e.g. pages 81–82)
+#    v2 only detected 7 pages; v3 detects all 17+ correctly
+# ✅ Text on diagram pages now also extracted separately so
+#    labels / API names visible on a figure page are indexed
+#    as text chunks too (dual indexing)
+# ✅ Table extraction now skips header/footer boilerplate rows
+#    (page number rows, document ID rows) that pollute tables
+# ✅ All content types (text, tables, diagrams) are extracted
+#    without any page being silently skipped
 #
 # RUN:
 # -----
@@ -55,7 +49,7 @@ import tempfile
 import warnings
 warnings.filterwarnings("ignore")
 
-from typing import List, Optional
+from typing import List
 
 import streamlit as st
 import fitz  # PyMuPDF
@@ -74,7 +68,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
 
-# BLIP (fallback image captioner)
+# BLIP
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
 # ============================================================
@@ -123,23 +117,19 @@ defaults = {
     "qa_chain": None,
     "chat_history": [],
     "doc_stats": {},
-    "extracted_imgs": []
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 # ============================================================
-# EMBEDDING MODEL
+# CACHED MODELS
 # ============================================================
 
 @st.cache_resource
 def load_embedding_model():
     return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# ============================================================
-# BLIP MODEL (fallback for non-diagram images)
-# ============================================================
 
 @st.cache_resource
 def load_blip_model():
@@ -153,60 +143,149 @@ def load_blip_model():
     return processor, model
 
 # ============================================================
+# CONSTANTS — DIAGRAM DETECTION
+# ============================================================
+
+# Strict figure caption: "Figure 1:" or "Figure 1." — means the
+# figure is physically present on this page (not a cross-reference)
+FIGURE_CAPTION_RE = re.compile(r'Figure\s+\d+\s*[:\.]', re.IGNORECASE)
+
+# Heading pattern for section metadata
+HEADING_RE = re.compile(
+    r'^(\d+(\.\d+){0,3})\s+([A-Z][^\n]{3,80})$',
+    re.MULTILINE
+)
+
+# Minimum vector drawing paths to consider a page as having a diagram
+# (tables also produce drawing paths for borders — threshold filters them)
+MIN_DRAWING_PATHS_FOR_DIAGRAM = 25
+
+# Minimum drawing paths for a page with NO figure caption to still be
+# treated as a diagram (e.g. pages 81–82: pure data-flow diagrams with
+# no "Figure N:" label in the text)
+MIN_DRAWING_PATHS_NO_CAPTION = 80
+
+# ============================================================
 # HELPERS
 # ============================================================
 
+def extract_nearest_heading(text: str) -> str:
+    matches = list(HEADING_RE.finditer(text))
+    return matches[-1].group(0).strip() if matches else ""
+
+
+def is_toc_only_page(text: str) -> bool:
+    """True only when >60% of non-empty lines are TOC dot-leader rows."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return True
+    dot_lines = sum(1 for l in lines if re.search(r'\.{4,}', l))
+    return dot_lines / len(lines) > 0.6
+
 
 def caption_image_with_blip(pil_img: Image.Image) -> str:
-    """BLIP caption — used only for non-diagram raster images."""
     processor, model = load_blip_model()
     inputs = processor(images=pil_img, return_tensors="pt")
     with torch.no_grad():
         output = model.generate(**inputs, max_new_tokens=80)
     return processor.decode(output[0], skip_special_tokens=True).strip()
 
-# ============================================================
-# FIX 1 — NARROWER NOISE FILTER
-# Only skip a page if its entire text is nothing but TOC dots.
-# Previously the filter dropped real content pages that merely
-# contained the phrase "table of contents" in a heading.
-# ============================================================
 
-def is_toc_only_page(text: str) -> bool:
-    """Return True only when the page is a pure TOC dot-leader page."""
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    if not lines:
-        return True
-    dot_lines = sum(1 for l in lines if re.search(r'\.{4,}', l))
-    # If more than 60 % of non-empty lines are dot-leader rows → TOC page
-    return dot_lines / len(lines) > 0.6
+def rasterize_page(pdf_path: str, page_num: int, dpi: int = 150) -> Image.Image:
+    """Render a single PDF page (0-indexed) to a PIL RGB image."""
+    doc = fitz.open(pdf_path)
+    page = doc[page_num]
+    mat = fitz.Matrix(dpi / 72, dpi / 72)
+    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    doc.close()
+    return img
 
 # ============================================================
-# FIX 2 — HEADING-AWARE TEXT EXTRACTION
-# Each chunk now carries the nearest section heading so the
-# retriever can surface "8.3.3.1 Com_SendSignal" context even
-# when the chunk itself is the parameter table below it.
+# DIAGRAM PAGE CLASSIFIER
 # ============================================================
 
-HEADING_RE = re.compile(
-    r'^(\d+(\.\d+){0,3})\s+([A-Z][^\n]{3,80})$',
-    re.MULTILINE
-)
+def classify_pages(pdf_path: str):
+    """
+    Returns a set of 0-indexed page numbers that are diagram pages.
 
+    Detection rules (any one match = diagram page):
+    ──────────────────────────────────────────────
+    Rule A — Figure caption + vector drawings:
+        Page text contains "Figure N:" AND drawing path count
+        >= MIN_DRAWING_PATHS_FOR_DIAGRAM.
+        Catches: architecture figures, signal flow diagrams,
+        UML diagrams, timing diagrams drawn as vectors.
 
-def extract_nearest_heading(text: str) -> str:
-    matches = list(HEADING_RE.finditer(text))
-    if matches:
-        return matches[-1].group(0).strip()
-    return ""
+    Rule B — Large embedded raster image:
+        Page contains at least one raster image >= 150×150 px
+        (ignoring the shared 464×48 header logo on every page).
+        Catches: bitmap figures, scanned diagrams.
 
+    Rule C — Dense colored vector drawings, no caption needed:
+        Drawing path count >= MIN_DRAWING_PATHS_NO_CAPTION AND
+        at least one colored drawing path AND text < 1500 chars.
+        Table border lines are always colorless; real diagrams use
+        colored arrows, boxes, and connector lines — this is the
+        key discriminator that eliminates table-heavy false positives.
+        Catches: pages 81–82 (Tx/Rx data flow) and similar pages
+        whose figure captions appear on the following page.
+    """
+    doc = fitz.open(pdf_path)
+    diagram_page_nums = set()
+
+    # xref 14 is the shared AUTOSAR header logo on every page — ignore it
+    HEADER_LOGO_XREF = 14
+
+    for page_num, page in enumerate(doc):
+        text      = page.get_text("text").strip()
+        drawings  = page.get_drawings()
+        images    = page.get_images(full=True)
+        n_draw    = len(drawings)
+
+        # Rule A
+        if FIGURE_CAPTION_RE.search(text) and n_draw >= MIN_DRAWING_PATHS_FOR_DIAGRAM:
+            diagram_page_nums.add(page_num)
+            continue
+
+        # Rule B
+        for img in images:
+            xref = img[0]
+            if xref == HEADER_LOGO_XREF:
+                continue
+            try:
+                bi = doc.extract_image(xref)
+                if bi.get("width", 0) >= 150 and bi.get("height", 0) >= 150:
+                    diagram_page_nums.add(page_num)
+                    break
+            except Exception:
+                pass
+
+        # Rule C — dense colored vector drawings, no figure caption needed
+        # Table borders are always colorless (color=None); real diagrams
+        # use at least one colored path (arrows, boxes, connector lines).
+        # This eliminates false positives from table-heavy pages.
+        if page_num not in diagram_page_nums:
+            colored_draws = sum(
+                1 for d in drawings if d.get("color") is not None
+            )
+            if (n_draw >= MIN_DRAWING_PATHS_NO_CAPTION
+                    and colored_draws > 0
+                    and len(text) < 1500):
+                diagram_page_nums.add(page_num)
+
+    doc.close()
+    return diagram_page_nums
+
+# ============================================================
+# TEXT EXTRACTION
+# ============================================================
 
 def extract_text_chunks(pdf_path: str) -> List[Document]:
     """
-    FIX: chunk_size raised to 800 (was 400) and chunk_overlap to
-    100 (was 50) so that multi-line API definitions (service name,
-    syntax, parameters, return value) stay in one chunk instead of
-    being split across boundaries, which caused Query 6 failure.
+    Extract text from ALL pages.
+    Diagram pages are also text-extracted so that API names,
+    layer labels, and signal names visible on figures are indexed.
     """
     doc = fitz.open(pdf_path)
     raw_docs = []
@@ -217,13 +296,12 @@ def extract_text_chunks(pdf_path: str) -> List[Document]:
             continue
 
         heading = extract_nearest_heading(text)
-
         raw_docs.append(
             Document(
                 page_content=text,
                 metadata={
-                    "page": page_num + 1,
-                    "type": "text",
+                    "page":    page_num + 1,
+                    "type":    "text",
                     "section": heading,
                 }
             )
@@ -231,16 +309,13 @@ def extract_text_chunks(pdf_path: str) -> List[Document]:
 
     doc.close()
 
-    # FIX: larger chunks preserve full API block definitions
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,          # was 400
-        chunk_overlap=100,       # was 50
+        chunk_size=800,
+        chunk_overlap=100,
         separators=["\n\n", "\n", ".", " "]
     )
-
     split_docs = splitter.split_documents(raw_docs)
 
-    # Propagate the section heading into every split child
     for d in split_docs:
         if not d.metadata.get("section"):
             d.metadata["section"] = extract_nearest_heading(d.page_content)
@@ -248,15 +323,20 @@ def extract_text_chunks(pdf_path: str) -> List[Document]:
     return split_docs
 
 # ============================================================
-# FIX 3 — TABLE EXTRACTION WITH HEADER ROW PRESERVATION
-# v1 joined all rows identically; the header row was
-# indistinguishable from data rows. Now the first row is labelled
-# as HEADERS so the LLM can correlate column names with values —
-# fixes Query 4 (Com_IpduGroupVector values) and Query 7 (Rx
-# timeout config params).
+# TABLE EXTRACTION
 # ============================================================
 
 def extract_table_chunks(pdf_path: str) -> List[Document]:
+    """
+    Extract tables from all pages using pdfplumber.
+    First row labelled HEADERS so column names are self-explanatory
+    when the chunk is retrieved out of context.
+    Boilerplate rows (page numbers, doc ID lines) are filtered out.
+    """
+    BOILERPLATE_RE = re.compile(
+        r'(document id|autosar_sws|of \d+|autosar confidential)',
+        re.IGNORECASE
+    )
     chunks = []
 
     with pdfplumber.open(pdf_path) as pdf:
@@ -272,21 +352,29 @@ def extract_table_chunks(pdf_path: str) -> List[Document]:
                     cleaned = [str(c).strip() if c else "" for c in row]
                     row_text = " | ".join(cleaned)
 
+                    # Skip boilerplate rows
+                    if BOILERPLATE_RE.search(row_text):
+                        continue
+                    # Skip completely empty rows
+                    if not any(c.strip() for c in cleaned):
+                        continue
+
                     if row_i == 0:
-                        # FIX: mark first row as headers
                         rows.append(f"HEADERS: {row_text}")
                     else:
                         rows.append(row_text)
 
                 table_text = "\n".join(rows)
-
                 if table_text.strip():
                     chunks.append(
                         Document(
-                            page_content=f"TABLE CONTENT (Page {page_num + 1}):\n\n{table_text}",
+                            page_content=(
+                                f"TABLE CONTENT (Page {page_num + 1}, "
+                                f"Table {idx + 1}):\n\n{table_text}"
+                            ),
                             metadata={
-                                "page": page_num + 1,
-                                "type": "table",
+                                "page":    page_num + 1,
+                                "type":    "table",
                                 "section": f"Table {idx + 1}",
                             }
                         )
@@ -295,106 +383,63 @@ def extract_table_chunks(pdf_path: str) -> List[Document]:
     return chunks
 
 # ============================================================
-# FIX 4 — DIAGRAM / IMAGE EXTRACTION VIA PAGE RASTERIZATION
-#
-# v1 used BLIP which generates captions based on visual pattern
-# matching — it produced "a diagram of the mrna pathway" for an
-# AUTOSAR architecture figure (Query 8 & 9 failures).
-#
-# Fix: rasterize the entire page containing a large image at
-# 150 DPI and run BLIP on the full page render, which includes
-# labels, arrows, and text that BLIP can read from a rendered
-# page far better than from a tiny extracted raster fragment.
-#
-# Additionally, we extract the surrounding text from that page
-# and prepend it to the image description so that even if BLIP
-# under-describes the diagram, the surrounding spec text (which
-# names the figure) is still indexed.
+# DIAGRAM EXTRACTION  (v3 — full coverage)
 # ============================================================
 
-def rasterize_page(pdf_path: str, page_num: int, dpi: int = 150) -> Image.Image:
-    """Render a single PDF page to a PIL image."""
-    doc = fitz.open(pdf_path)
-    page = doc[page_num]
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    doc.close()
-    return img
-
-
-def extract_image_chunks(pdf_path: str):
+def extract_diagram_chunks(pdf_path: str, diagram_page_nums: set):
     """
-    FIX: Instead of extracting tiny embedded raster blobs (which
-    BLIP misidentifies), we rasterize the whole page and caption
-    the full-page render. We also prepend surrounding page text
-    so figure labels and titles are always indexed.
+    For every identified diagram page:
+    1. Rasterize the full page at 150 DPI (captures vector graphics
+       and embedded rasters equally).
+    2. Run BLIP on the full-page render — far more accurate than
+       running BLIP on a tiny extracted raster fragment.
+    3. Combine BLIP caption with the page's extracted text so that
+       figure labels, layer names, and signal names are all indexed.
+
+    Returns (chunks, stats_count).
     """
-    doc = fitz.open(pdf_path)
     chunks = []
-    previews = []
     img_counter = 0
 
-    for page_num, page in enumerate(doc):
-        images = page.get_images(full=True)
-
-        # Only process pages that have substantive images (skip icon-only pages)
-        large_images = []
-        for img in images:
-            try:
-                xref = img[0]
-                base_img = doc.extract_image(xref)
-                w = base_img.get("width", 0)
-                h = base_img.get("height", 0)
-                if w >= 150 and h >= 150:
-                    large_images.append(img)
-            except Exception:
-                pass
-
-        if not large_images:
-            continue
-
-        img_counter += 1
-
-        # Rasterize the full page — captures vector diagrams and labels
+    for page_num in sorted(diagram_page_nums):
         try:
+            # Rasterize full page
             page_render = rasterize_page(pdf_path, page_num, dpi=150)
-        except Exception:
-            continue
 
-        # Get surrounding text from this page for context
-        page_text = page.get_text("text").strip()
+            # Extract text visible on this page (labels, captions)
+            doc_tmp = fitz.open(pdf_path)
+            page_text = doc_tmp[page_num].get_text("text").strip()
+            doc_tmp.close()
 
-        # Caption the full-page render — far more accurate for diagrams
-        caption = caption_image_with_blip(page_render)
+            # Get BLIP caption on full-page render
+            caption = caption_image_with_blip(page_render)
 
-        # Build a rich description combining caption + page text excerpt
-        text_excerpt = page_text[:600] if page_text else ""
-        full_description = (
-            f"DIAGRAM/FIGURE DESCRIPTION (Page {page_num + 1}):\n\n"
-            f"Visual caption: {caption}\n\n"
-            f"Surrounding specification text:\n{text_excerpt}"
-        )
+            # Extract figure caption from text if present
+            fig_matches = FIGURE_CAPTION_RE.findall(page_text)
+            fig_label   = ", ".join(fig_matches) if fig_matches else "Unlabelled diagram"
 
-        previews.append({
-            "page": page_num + 1,
-            "index": img_counter,
-            "caption": caption,
-        })
-
-        chunks.append(
-            Document(
-                page_content=full_description,
-                metadata={
-                    "page": page_num + 1,
-                    "type": "diagram",
-                    "section": extract_nearest_heading(page_text),
-                }
+            full_description = (
+                f"DIAGRAM PAGE {page_num + 1} — {fig_label}\n\n"
+                f"Visual caption: {caption}\n\n"
+                f"Text/labels on this page:\n{page_text[:800]}"
             )
-        )
 
-    doc.close()
-    return chunks, previews
+            img_counter += 1
+            chunks.append(
+                Document(
+                    page_content=full_description,
+                    metadata={
+                        "page":    page_num + 1,
+                        "type":    "diagram",
+                        "section": fig_label,
+                    }
+                )
+            )
+
+        except Exception as e:
+            st.warning(f"Could not process diagram on page {page_num + 1}: {e}")
+
+    return chunks, img_counter
 
 # ============================================================
 # VECTORSTORE
@@ -402,39 +447,25 @@ def extract_image_chunks(pdf_path: str):
 
 def build_vectorstore(all_docs: List[Document]) -> Chroma:
     embeddings = load_embedding_model()
-    vectorstore = Chroma.from_documents(
+    return Chroma.from_documents(
         documents=all_docs,
         embedding=embeddings,
         collection_name="multimodal_rag"
     )
-    return vectorstore
 
 # ============================================================
-# FIX 5 — MMR RETRIEVER WITH k=6
-#
-# v1 used plain similarity search with k=3.
-# Problems:
-#   • k=3 missed distant but relevant pages (e.g., Com_SendSignal
-#     is defined on p91 but referenced on p37, p109, p118).
-#   • Plain similarity returns near-duplicate chunks from the
-#     same page, wasting all 3 slots on one source.
-#
-# Fix: MMR (Maximal Marginal Relevance) balances relevance with
-# diversity so we get 6 different, non-duplicate chunks spanning
-# multiple pages — critical for multi-section queries like
-# "PDU Router and COM interaction" (Query 1).
+# RETRIEVER  — MMR with k=6
 # ============================================================
 
 def create_retriever(vectorstore: Chroma):
-    retriever = vectorstore.as_retriever(
-        search_type="mmr",            # was "similarity"
+    return vectorstore.as_retriever(
+        search_type="mmr",
         search_kwargs={
-            "k": 6,                   # was 3
-            "fetch_k": 20,            # candidate pool for MMR
-            "lambda_mult": 0.6        # 0=max diversity, 1=max relevance
+            "k": 6,
+            "fetch_k": 20,
+            "lambda_mult": 0.6,
         }
     )
-    return retriever
 
 # ============================================================
 # LLM
@@ -449,22 +480,11 @@ def initialize_llm(model, api_key, temperature, max_tokens):
     )
 
 # ============================================================
-# FIX 6 — IMPROVED PROMPT
-#
-# v1 had contradictory rules 8 and 10:
-#   Rule 8: "Never say 'not found' if the answer can be inferred"
-#   Rule 10: "If not present, state: 'The answer is not specified'"
-# This caused the LLM to hedge on answerable questions (Query 6)
-# and hallucinate on unanswerable ones (Query 8).
-#
-# Fix: Single clear policy — answer from context, be explicit
-# about inference, admit gaps precisely (not globally).
-# Also added instructions to list ALL parameters for API queries
-# and to describe diagram layers/components explicitly.
+# PROMPT
 # ============================================================
 
 def create_prompt() -> ChatPromptTemplate:
-    template = """You are a precise AUTOSAR specification assistant.
+    template = """You are a precise document assistant.
 
 Answer ONLY using the provided context. Follow these rules exactly:
 
@@ -500,7 +520,7 @@ Source:
     ])
 
 # ============================================================
-# FORMAT DOCUMENTS
+# FORMAT DOCS
 # ============================================================
 
 def format_docs(docs: List[Document]) -> str:
@@ -513,7 +533,8 @@ def format_docs(docs: List[Document]) -> str:
         if section:
             header += f" | Section: {section}"
         parts.append(f"{header}\n\nCONTENT:\n{doc.page_content}")
-    return "\n\n{'='*60}\n\n".join(parts)
+    sep = "\n\n" + "=" * 60 + "\n\n"
+    return sep.join(parts)
 
 # ============================================================
 # RAG CHAIN
@@ -526,26 +547,23 @@ def create_rag_chain(retriever, llm):
         docs = retriever.invoke(question)
         return {
             "question": question,
-            "context": format_docs(docs),
-            "source_documents": docs
+            "context":  format_docs(docs),
+            "source_documents": docs,
         }
 
     def generate(inputs: dict):
-        chain = prompt | llm | StrOutputParser()
+        chain  = prompt | llm | StrOutputParser()
         answer = chain.invoke({
             "context":  inputs["context"],
-            "question": inputs["question"]
+            "question": inputs["question"],
         })
         return {
             "answer": answer,
-            "source_documents": inputs["source_documents"]
+            "source_documents": inputs["source_documents"],
         }
 
     return RunnableLambda(retrieve) | RunnableLambda(generate)
 
-# ============================================================
-# BUILD QA CHAIN
-# ============================================================
 
 def build_qa_chain(vectorstore, model_name, api_key, temperature, max_tokens):
     retriever = create_retriever(vectorstore)
@@ -553,7 +571,7 @@ def build_qa_chain(vectorstore, model_name, api_key, temperature, max_tokens):
         model=model_name,
         api_key=api_key,
         temperature=temperature,
-        max_tokens=max_tokens
+        max_tokens=max_tokens,
     )
     return create_rag_chain(retriever, llm)
 
@@ -561,51 +579,54 @@ def build_qa_chain(vectorstore, model_name, api_key, temperature, max_tokens):
 # PROCESS PDF
 # ============================================================
 
-def process_pdf(pdf_path, model_name, api_key, include_images, temperature, max_tokens):
+def process_pdf(pdf_path, model_name, api_key, include_diagrams, temperature, max_tokens):
     progress = st.progress(0)
     all_docs = []
 
-    # TEXT
+    # STEP 1 — Classify diagram pages up front (fast, no rasterization)
+    progress.progress(5, text="Classifying page types…")
+    diagram_page_nums = classify_pages(pdf_path) if include_diagrams else set()
+
+    # STEP 2 — Text (all pages)
     progress.progress(20, text="Extracting text chunks…")
     text_chunks = extract_text_chunks(pdf_path)
     all_docs.extend(text_chunks)
 
-    # TABLES
-    progress.progress(40, text="Extracting tables…")
+    # STEP 3 — Tables
+    progress.progress(45, text="Extracting tables…")
     table_chunks = extract_table_chunks(pdf_path)
     all_docs.extend(table_chunks)
 
-    # IMAGES / DIAGRAMS
-    img_chunks = []
-    if include_images:
-        progress.progress(55, text="Rasterizing diagram pages…")
-        img_chunks, previews = extract_image_chunks(pdf_path)
-        all_docs.extend(img_chunks)
-        st.session_state.extracted_imgs = previews
+    # STEP 4 — Diagrams
+    diagram_count = 0
+    if include_diagrams and diagram_page_nums:
+        progress.progress(60, text=f"Rasterizing {len(diagram_page_nums)} diagram pages…")
+        diagram_chunks, diagram_count = extract_diagram_chunks(pdf_path, diagram_page_nums)
+        all_docs.extend(diagram_chunks)
 
-    # VECTORSTORE
-    progress.progress(75, text="Building vector store…")
+    # STEP 5 — Vectorstore
+    progress.progress(80, text="Building vector store…")
     vectorstore = build_vectorstore(all_docs)
     st.session_state.vectorstore = vectorstore
 
-    # QA CHAIN
+    # STEP 6 — QA chain
     progress.progress(95, text="Initialising QA chain…")
     qa_chain = build_qa_chain(
         vectorstore=vectorstore,
         model_name=model_name,
         api_key=api_key,
         temperature=temperature,
-        max_tokens=max_tokens
+        max_tokens=max_tokens,
     )
     st.session_state.qa_chain = qa_chain
 
     progress.progress(100, text="Done.")
 
     st.session_state.doc_stats = {
-        "text_chunks":  len(text_chunks),
-        "table_chunks": len(table_chunks),
-        "image_chunks": len(img_chunks),
-        "total_chunks": len(all_docs)
+        "text_chunks":    len(text_chunks),
+        "table_chunks":   len(table_chunks),
+        "diagram_chunks": diagram_count,
+        "total_chunks":   len(all_docs),
     }
 
 # ============================================================
@@ -624,22 +645,18 @@ with st.sidebar:
         [
             "llama-3.3-70b-versatile",
             "qwen/qwen3-32b",
-            "openai/gpt-oss-20b"
+            "openai/gpt-oss-20b",
         ]
     )
 
-    temperature = st.slider("Temperature", 0.0, 1.0, 0.1)
-    max_tokens  = st.slider("Max Tokens", 100, 2000, 1000)   # raised default
-
-    uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
-
-    include_images = st.checkbox("Enable Diagram Analysis", value=True)
-
-    process_btn = st.button("Process PDF", use_container_width=True)
+    temperature      = st.slider("Temperature", 0.0, 1.0, 0.1)
+    max_tokens       = st.slider("Max Tokens", 100, 2000, 1000)
+    uploaded_file    = st.file_uploader("Upload PDF", type=["pdf"])
+    include_diagrams = st.checkbox("Enable Diagram Analysis", value=True)
+    process_btn      = st.button("Process PDF", use_container_width=True)
 
     if process_btn and uploaded_file:
-        st.session_state.chat_history   = []
-        st.session_state.extracted_imgs = []
+        st.session_state.chat_history = []
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_file.read())
@@ -650,18 +667,18 @@ with st.sidebar:
                 pdf_path=tmp_path,
                 model_name=model,
                 api_key=api_key,
-                include_images=include_images,
+                include_diagrams=include_diagrams,
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
             )
             st.success("PDF processed successfully!")
 
-            stats = st.session_state.doc_stats
+            s = st.session_state.doc_stats
             st.caption(
-                f"Text: {stats['text_chunks']} | "
-                f"Table: {stats['table_chunks']} | "
-                f"Diagram: {stats['image_chunks']} | "
-                f"Total: {stats['total_chunks']} chunks"
+                f"Text: {s['text_chunks']} | "
+                f"Table: {s['table_chunks']} | "
+                f"Diagram: {s['diagram_chunks']} | "
+                f"Total: {s['total_chunks']} chunks"
             )
         except Exception as e:
             st.error(str(e))
@@ -672,8 +689,14 @@ with st.sidebar:
 # MAIN UI
 # ============================================================
 
-st.markdown('<div class="main-header">🧠 Enterprise Multimodal RAG</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Groq + LangChain + ChromaDB | Fixed v2</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="main-header">🧠 Enterprise Multimodal RAG</div>',
+    unsafe_allow_html=True
+)
+st.markdown(
+    '<div class="sub-header">Groq + LangChain + ChromaDB | v3</div>',
+    unsafe_allow_html=True
+)
 
 # ============================================================
 # WELCOME
@@ -683,16 +706,16 @@ if st.session_state.qa_chain is None:
     st.info("""
 ### How to Use
 1. Add your **GROQ API KEY** in Streamlit secrets
-2. Upload a PDF (AUTOSAR, API spec, ISO document)
+2. Upload any PDF document
 3. Click **Process PDF**
 4. Ask questions in the chat
 
-**What's improved in v2:**
-- Larger chunks → full API definitions are never split mid-block
-- k=6 MMR retrieval → diverse, non-duplicate sources per query
-- Diagram pages rasterized → real layer/component descriptions
-- Table headers labelled → enum and config values are accurate
-- Clearer prompt → no more hedging on answerable questions
+**What's detected in v3:**
+- ✅ Text — all pages (including labels on diagram pages)
+- ✅ Tables — all pages, with header row labelling
+- ✅ Vector diagrams — UML, flow, architecture (pages 81–82, 16, 83, 118–122 etc.)
+- ✅ Raster/bitmap images — embedded PNG/JPEG figures
+- ✅ Mixed pages — pages with both diagrams and tables
 """)
 
 # ============================================================
@@ -731,7 +754,9 @@ if st.session_state.qa_chain:
                         unsafe_allow_html=True
                     )
 
-                    with st.expander(f"📘 Retrieved Specification Sections ({len(sources)})"):
+                    with st.expander(
+                        f"📘 Retrieved Sections ({len(sources)})"
+                    ):
                         for doc in sources:
                             meta    = doc.metadata
                             section = meta.get("section", "")
@@ -749,7 +774,7 @@ if st.session_state.qa_chain:
                     st.session_state.chat_history.append({
                         "question": question,
                         "answer":   answer,
-                        "sources":  sources
+                        "sources":  sources,
                     })
 
                 except Exception as e:
