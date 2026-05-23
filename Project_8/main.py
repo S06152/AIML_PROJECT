@@ -50,9 +50,7 @@
 # ============================================================
 
 import os
-import io
 import re
-import base64
 import tempfile
 import warnings
 warnings.filterwarnings("ignore")
@@ -157,11 +155,6 @@ def load_blip_model():
 # ============================================================
 # HELPERS
 # ============================================================
-
-def pil_to_base64(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
 
 
 def caption_image_with_blip(pil_img: Image.Image) -> str:
@@ -387,9 +380,6 @@ def extract_image_chunks(pdf_path: str):
             "page": page_num + 1,
             "index": img_counter,
             "caption": caption,
-            "b64": pil_to_base64(page_render.resize(
-                (page_render.width // 2, page_render.height // 2)
-            ))
         })
 
         chunks.append(
@@ -764,23 +754,6 @@ if st.session_state.qa_chain:
 
                 except Exception as e:
                     st.error(str(e))
-
-# ============================================================
-# DIAGRAM PREVIEW
-# ============================================================
-
-if st.session_state.extracted_imgs:
-    st.divider()
-    st.subheader("🖼 Extracted Diagram Pages")
-
-    cols = st.columns(3)
-    for i, img in enumerate(st.session_state.extracted_imgs):
-        with cols[i % 3]:
-            st.image(
-                f"data:image/png;base64,{img['b64']}",
-                use_column_width=True
-            )
-            st.caption(f"Page {img['page']} — {img['caption']}")
 
 # ============================================================
 # CLEAR CHAT
