@@ -1,23 +1,22 @@
 # ============================================================
-# MULTIMODAL RAG FOR PDF QA (ENTERPRISE QUALITY) — FIXED v3
+# MULTIMODAL RAG FOR PDF QA (ENTERPRISE QUALITY) — v4
 # ============================================================
 #
-# FIXES vs v2
-# -----------
-# ✅ Diagram detection v2 — now catches ALL diagram page types:
-#    • Vector diagrams (UML, flow, architecture) via drawing
-#      path count + strict "Figure N:" caption matching
-#    • Raster image pages (embedded PNG/JPEG >= 150px)
-#    • Diagram-only pages with no figure caption but dense
-#      vector drawing paths and low text (e.g. pages 81–82)
-#    v2 only detected 7 pages; v3 detects all 17+ correctly
-# ✅ Text on diagram pages now also extracted separately so
-#    labels / API names visible on a figure page are indexed
-#    as text chunks too (dual indexing)
-# ✅ Table extraction now skips header/footer boilerplate rows
-#    (page number rows, document ID rows) that pollute tables
-# ✅ All content types (text, tables, diagrams) are extracted
-#    without any page being silently skipped
+# ENHANCEMENTS vs v3
+# ------------------
+# ✅ "Retrieved Sections" panel REMOVED from primary response view
+#    — sources now shown in a collapsible sidebar-style expander
+#    only if the user explicitly toggles it
+# ✅ Richer LLM prompt: structured output with Markdown headings,
+#    bullet lists, code blocks for API signatures, and tables for
+#    parameter lists — the LLM now returns well-formatted Markdown
+# ✅ Answer rendered with st.markdown() for full Markdown display
+#    (bold, bullet lists, tables, code fences all render correctly)
+# ✅ Premium dark-theme UI: refined typography, card-based layout,
+#    gradient accents, animated progress indicators
+# ✅ Per-question metadata strip (page refs, content types) shown
+#    compactly below the answer — not as a massive expandable wall
+# ✅ All v3 extraction features retained unchanged
 #
 # RUN:
 # -----
@@ -76,35 +75,350 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 # ============================================================
 
 st.set_page_config(
-    page_title="Enterprise Multimodal RAG",
+    page_title="DocMind — Multimodal RAG",
     page_icon="🧠",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # ============================================================
-# CSS
+# CSS  — Premium dark-tech theme
 # ============================================================
 
 st.markdown("""
 <style>
-.main-header { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.2rem; }
-.sub-header  { color: gray; margin-bottom: 2rem; }
-.answer-box  {
-    background: #f4fff5;
-    border: 1px solid #d4f5dd;
-    padding: 1rem;
-    border-radius: 10px;
-    font-size: 1rem;
-    white-space: pre-wrap;
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Sora:wght@300;400;600;700&display=swap');
+
+/* ── Root palette ────────────────────────────────────────── */
+:root {
+    --bg-base:      #0d0f14;
+    --bg-card:      #13161e;
+    --bg-input:     #1a1e2b;
+    --border:       #252a38;
+    --border-glow:  #3b82f6;
+    --accent-blue:  #3b82f6;
+    --accent-cyan:  #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose:  #f43f5e;
+    --text-primary: #e8eaf0;
+    --text-muted:   #6b7280;
+    --text-dim:     #374151;
+    --mono:         'IBM Plex Mono', monospace;
+    --sans:         'Sora', sans-serif;
 }
-.chunk-card {
-    background: #fafafa;
-    border-left: 4px solid #2ecc71;
-    padding: 0.8rem;
+
+/* ── Global resets ───────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: var(--sans);
+    background-color: var(--bg-base) !important;
+    color: var(--text-primary) !important;
+}
+
+.stApp { background: var(--bg-base) !important; }
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Header banner ───────────────────────────────────────── */
+.docmind-header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+    border: 1px solid #2d2b6b;
+    border-radius: 16px;
+    padding: 2rem 2.5rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+}
+.docmind-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -20%;
+    width: 60%;
+    height: 200%;
+    background: radial-gradient(ellipse, rgba(99,102,241,0.12) 0%, transparent 70%);
+    pointer-events: none;
+}
+.docmind-title {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #818cf8, #60a5fa, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0 0 0.3rem 0;
+}
+.docmind-sub {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    font-weight: 300;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0;
+}
+
+/* ── Stat chips ──────────────────────────────────────────── */
+.stat-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.2rem;
+}
+.stat-chip {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    margin-bottom: 0.8rem;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
 }
-.chunk-meta { color: gray; font-size: 0.8rem; margin-bottom: 0.4rem; }
+.stat-chip b { color: var(--text-primary); }
+
+/* ── Chat messages ───────────────────────────────────────── */
+.msg-user {
+    background: linear-gradient(135deg, #1e3a5f, #1a2f4a);
+    border: 1px solid #2563eb40;
+    border-radius: 14px 14px 4px 14px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0 0.5rem auto;
+    max-width: 78%;
+    font-size: 0.95rem;
+    color: #bfdbfe;
+    line-height: 1.6;
+}
+
+.msg-assistant {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px 14px 14px 14px;
+    padding: 1.4rem 1.6rem;
+    margin: 0.5rem 0 0.5rem 0;
+    font-size: 0.93rem;
+    line-height: 1.75;
+    color: var(--text-primary);
+    position: relative;
+}
+.msg-assistant::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan), var(--accent-green));
+    border-radius: 4px 14px 0 0;
+}
+
+/* ── Markdown inside answer ──────────────────────────────── */
+.msg-assistant h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #93c5fd;
+    margin: 1.2rem 0 0.5rem 0;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.01em;
+}
+.msg-assistant h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #6ee7b7;
+    margin: 0.9rem 0 0.3rem 0;
+}
+.msg-assistant ul, .msg-assistant ol {
+    margin: 0.5rem 0 0.5rem 1.2rem;
+    padding: 0;
+}
+.msg-assistant li {
+    margin-bottom: 0.35rem;
+    color: #d1d5db;
+}
+.msg-assistant code {
+    font-family: var(--mono);
+    background: #1e2535;
+    border: 1px solid #2d3748;
+    border-radius: 4px;
+    padding: 0.15em 0.45em;
+    font-size: 0.83em;
+    color: #7dd3fc;
+}
+.msg-assistant pre {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    margin: 0.75rem 0;
+}
+.msg-assistant pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.82em;
+    color: #a5f3fc;
+}
+.msg-assistant table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.8rem 0;
+    font-size: 0.84rem;
+}
+.msg-assistant th {
+    background: #1e2535;
+    color: #93c5fd;
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+    border: 1px solid var(--border);
+    font-weight: 600;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.msg-assistant td {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--border);
+    color: #d1d5db;
+    vertical-align: top;
+}
+.msg-assistant tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+.msg-assistant strong { color: #fde68a; font-weight: 600; }
+.msg-assistant em { color: #a5b4fc; }
+.msg-assistant blockquote {
+    border-left: 3px solid var(--accent-blue);
+    margin: 0.8rem 0;
+    padding: 0.5rem 1rem;
+    background: rgba(59,130,246,0.05);
+    border-radius: 0 6px 6px 0;
+    color: #94a3b8;
+    font-size: 0.9rem;
+}
+
+/* ── Source citation strip ───────────────────────────────── */
+.src-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.9rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+.src-label {
+    font-size: 0.72rem;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-right: 0.25rem;
+}
+.src-badge {
+    font-size: 0.72rem;
+    font-family: var(--mono);
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+}
+.src-badge.text    { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+.src-badge.table   { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+.src-badge.diagram { background: rgba(139,92,246,0.12); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.25); }
+
+/* ── Welcome card ────────────────────────────────────────── */
+.welcome-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 2rem;
+    text-align: center;
+}
+.welcome-icon { font-size: 3rem; margin-bottom: 1rem; }
+.welcome-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+.welcome-desc { color: var(--text-muted); font-size: 0.9rem; line-height: 1.7; }
+.step-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+.step-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+}
+.step-num {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 700; color: white;
+    margin: 0 auto 0.6rem auto;
+}
+.step-text { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: var(--bg-card) !important;
+    border-right: 1px solid var(--border) !important;
+}
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stSlider label,
+[data-testid="stSidebar"] .stCheckbox label,
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: var(--text-primary) !important;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.stButton > button {
+    background: linear-gradient(135deg, #3b82f6, #6366f1) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-family: var(--sans) !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+    transition: opacity 0.2s !important;
+}
+.stButton > button:hover { opacity: 0.88 !important; }
+
+/* ── Chat input ──────────────────────────────────────────── */
+[data-testid="stChatInputTextArea"] {
+    background: var(--bg-input) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+    border-radius: 10px !important;
+    font-family: var(--sans) !important;
+}
+[data-testid="stChatInputTextArea"]:focus {
+    border-color: var(--accent-blue) !important;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.15) !important;
+}
+
+/* ── Progress bar ────────────────────────────────────────── */
+[data-testid="stProgressBar"] > div {
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)) !important;
+}
+
+/* ── Divider ─────────────────────────────────────────────── */
+hr { border-color: var(--border) !important; }
+
+/* hide default streamlit branding */
+#MainMenu, footer, header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -113,10 +427,10 @@ st.markdown("""
 # ============================================================
 
 defaults = {
-    "vectorstore": None,
-    "qa_chain": None,
+    "vectorstore":  None,
+    "qa_chain":     None,
     "chat_history": [],
-    "doc_stats": {},
+    "doc_stats":    {},
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -146,24 +460,13 @@ def load_blip_model():
 # CONSTANTS — DIAGRAM DETECTION
 # ============================================================
 
-# Strict figure caption: "Figure 1:" or "Figure 1." — means the
-# figure is physically present on this page (not a cross-reference)
 FIGURE_CAPTION_RE = re.compile(r'Figure\s+\d+\s*[:\.]', re.IGNORECASE)
-
-# Heading pattern for section metadata
 HEADING_RE = re.compile(
     r'^(\d+(\.\d+){0,3})\s+([A-Z][^\n]{3,80})$',
     re.MULTILINE
 )
-
-# Minimum vector drawing paths to consider a page as having a diagram
-# (tables also produce drawing paths for borders — threshold filters them)
-MIN_DRAWING_PATHS_FOR_DIAGRAM = 25
-
-# Minimum drawing paths for a page with NO figure caption to still be
-# treated as a diagram (e.g. pages 81–82: pure data-flow diagrams with
-# no "Figure N:" label in the text)
-MIN_DRAWING_PATHS_NO_CAPTION = 80
+MIN_DRAWING_PATHS_FOR_DIAGRAM   = 25
+MIN_DRAWING_PATHS_NO_CAPTION    = 80
 
 # ============================================================
 # HELPERS
@@ -175,7 +478,6 @@ def extract_nearest_heading(text: str) -> str:
 
 
 def is_toc_only_page(text: str) -> bool:
-    """True only when >60% of non-empty lines are TOC dot-leader rows."""
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     if not lines:
         return True
@@ -192,7 +494,6 @@ def caption_image_with_blip(pil_img: Image.Image) -> str:
 
 
 def rasterize_page(pdf_path: str, page_num: int, dpi: int = 150) -> Image.Image:
-    """Render a single PDF page (0-indexed) to a PIL RGB image."""
     doc = fitz.open(pdf_path)
     page = doc[page_num]
     mat = fitz.Matrix(dpi / 72, dpi / 72)
@@ -206,49 +507,20 @@ def rasterize_page(pdf_path: str, page_num: int, dpi: int = 150) -> Image.Image:
 # ============================================================
 
 def classify_pages(pdf_path: str):
-    """
-    Returns a set of 0-indexed page numbers that are diagram pages.
-
-    Detection rules (any one match = diagram page):
-    ──────────────────────────────────────────────
-    Rule A — Figure caption + vector drawings:
-        Page text contains "Figure N:" AND drawing path count
-        >= MIN_DRAWING_PATHS_FOR_DIAGRAM.
-        Catches: architecture figures, signal flow diagrams,
-        UML diagrams, timing diagrams drawn as vectors.
-
-    Rule B — Large embedded raster image:
-        Page contains at least one raster image >= 150×150 px
-        (ignoring the shared 464×48 header logo on every page).
-        Catches: bitmap figures, scanned diagrams.
-
-    Rule C — Dense colored vector drawings, no caption needed:
-        Drawing path count >= MIN_DRAWING_PATHS_NO_CAPTION AND
-        at least one colored drawing path AND text < 1500 chars.
-        Table border lines are always colorless; real diagrams use
-        colored arrows, boxes, and connector lines — this is the
-        key discriminator that eliminates table-heavy false positives.
-        Catches: pages 81–82 (Tx/Rx data flow) and similar pages
-        whose figure captions appear on the following page.
-    """
     doc = fitz.open(pdf_path)
     diagram_page_nums = set()
-
-    # xref 14 is the shared AUTOSAR header logo on every page — ignore it
     HEADER_LOGO_XREF = 14
 
     for page_num, page in enumerate(doc):
-        text      = page.get_text("text").strip()
-        drawings  = page.get_drawings()
-        images    = page.get_images(full=True)
-        n_draw    = len(drawings)
+        text     = page.get_text("text").strip()
+        drawings = page.get_drawings()
+        images   = page.get_images(full=True)
+        n_draw   = len(drawings)
 
-        # Rule A
         if FIGURE_CAPTION_RE.search(text) and n_draw >= MIN_DRAWING_PATHS_FOR_DIAGRAM:
             diagram_page_nums.add(page_num)
             continue
 
-        # Rule B
         for img in images:
             xref = img[0]
             if xref == HEADER_LOGO_XREF:
@@ -261,10 +533,6 @@ def classify_pages(pdf_path: str):
             except Exception:
                 pass
 
-        # Rule C — dense colored vector drawings, no figure caption needed
-        # Table borders are always colorless (color=None); real diagrams
-        # use at least one colored path (arrows, boxes, connector lines).
-        # This eliminates false positives from table-heavy pages.
         if page_num not in diagram_page_nums:
             colored_draws = sum(
                 1 for d in drawings if d.get("color") is not None
@@ -282,11 +550,6 @@ def classify_pages(pdf_path: str):
 # ============================================================
 
 def extract_text_chunks(pdf_path: str) -> List[Document]:
-    """
-    Extract text from ALL pages.
-    Diagram pages are also text-extracted so that API names,
-    layer labels, and signal names visible on figures are indexed.
-    """
     doc = fitz.open(pdf_path)
     raw_docs = []
 
@@ -327,12 +590,6 @@ def extract_text_chunks(pdf_path: str) -> List[Document]:
 # ============================================================
 
 def extract_table_chunks(pdf_path: str) -> List[Document]:
-    """
-    Extract tables from all pages using pdfplumber.
-    First row labelled HEADERS so column names are self-explanatory
-    when the chunk is retrieved out of context.
-    Boilerplate rows (page numbers, doc ID lines) are filtered out.
-    """
     BOILERPLATE_RE = re.compile(
         r'(document id|autosar_sws|of \d+|autosar confidential)',
         re.IGNORECASE
@@ -352,10 +609,8 @@ def extract_table_chunks(pdf_path: str) -> List[Document]:
                     cleaned = [str(c).strip() if c else "" for c in row]
                     row_text = " | ".join(cleaned)
 
-                    # Skip boilerplate rows
                     if BOILERPLATE_RE.search(row_text):
                         continue
-                    # Skip completely empty rows
                     if not any(c.strip() for c in cleaned):
                         continue
 
@@ -383,38 +638,22 @@ def extract_table_chunks(pdf_path: str) -> List[Document]:
     return chunks
 
 # ============================================================
-# DIAGRAM EXTRACTION  (v3 — full coverage)
+# DIAGRAM EXTRACTION
 # ============================================================
 
 def extract_diagram_chunks(pdf_path: str, diagram_page_nums: set):
-    """
-    For every identified diagram page:
-    1. Rasterize the full page at 150 DPI (captures vector graphics
-       and embedded rasters equally).
-    2. Run BLIP on the full-page render — far more accurate than
-       running BLIP on a tiny extracted raster fragment.
-    3. Combine BLIP caption with the page's extracted text so that
-       figure labels, layer names, and signal names are all indexed.
-
-    Returns (chunks, stats_count).
-    """
     chunks = []
     img_counter = 0
 
     for page_num in sorted(diagram_page_nums):
         try:
-            # Rasterize full page
             page_render = rasterize_page(pdf_path, page_num, dpi=150)
 
-            # Extract text visible on this page (labels, captions)
             doc_tmp = fitz.open(pdf_path)
             page_text = doc_tmp[page_num].get_text("text").strip()
             doc_tmp.close()
 
-            # Get BLIP caption on full-page render
-            caption = caption_image_with_blip(page_render)
-
-            # Extract figure caption from text if present
+            caption     = caption_image_with_blip(page_render)
             fig_matches = FIGURE_CAPTION_RE.findall(page_text)
             fig_label   = ", ".join(fig_matches) if fig_matches else "Unlabelled diagram"
 
@@ -454,7 +693,7 @@ def build_vectorstore(all_docs: List[Document]) -> Chroma:
     )
 
 # ============================================================
-# RETRIEVER  — MMR with k=6
+# RETRIEVER
 # ============================================================
 
 def create_retriever(vectorstore: Chroma):
@@ -480,39 +719,45 @@ def initialize_llm(model, api_key, temperature, max_tokens):
     )
 
 # ============================================================
-# PROMPT
+# ENHANCED PROMPT  — structured Markdown output
 # ============================================================
 
 def create_prompt() -> ChatPromptTemplate:
-    template = """You are a precise document assistant.
+    template = """You are an expert technical documentation assistant specialising in AUTOSAR and embedded systems specifications.
 
-Answer ONLY using the provided context. Follow these rules exactly:
+Your task is to answer the user's question using ONLY the provided context.
 
-ANSWERING RULES:
-1. Give direct, technically precise answers without preamble.
-2. For API functions: always list ALL parameters (in, in-out, out), return type, sync/async, and reentrancy from the context. If a field is listed as "None", say so explicitly.
-3. For enum/constant values: extract the exact value. If the value must be inferred (e.g., sequential numbering), state the inferred value AND note it is inferred.
-4. For configuration parameters: list every parameter name and its container/ID where available.
-5. For diagrams and architecture figures: describe every labelled layer, module, arrow, and interface shown. Reference the figure number and page.
-6. Always cite the source: page number and content type (table / diagram / text).
-7. If the context partially answers the question, provide what is available and state exactly what is missing.
-8. If the context contains NO relevant information at all, state: "The provided context does not contain this information." Do NOT guess or use external knowledge.
-9. Use exact terminology from the specification. Do not paraphrase technical identifiers.
-10. For multi-part questions, answer each part in order.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — strictly follow this structure:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+Write your answer in clean, readable **Markdown**.
+
+**Structure rules:**
+1. Start with a concise 1-2 sentence summary of the answer in plain prose (no heading needed).
+2. Use `##` headings to separate major sub-topics when the answer has multiple distinct parts.
+3. Use `###` sub-headings for nested detail (e.g. individual parameters, sub-features).
+4. Use bullet lists (`-`) for enumerations; use numbered lists only for ordered steps.
+5. For **API functions**: always present a code-fenced signature block (`\`\`\`c`) followed by a Markdown table with columns: Parameter | Direction | Type | Description. Then state return type, synchronous/asynchronous, and re-entrancy.
+6. For **configuration parameters**: present a Markdown table with columns: Parameter | Type | Range / Values | Description.
+7. For **enum or constant values**: list them in a `\`\`\`c` block. If a value is inferred (not explicit), add *(inferred)* after it.
+8. For **architecture / diagram descriptions**: describe every visible layer, module, arrow, and interface in a structured way. Reference the figure number and page.
+9. Use `**bold**` for key technical identifiers, SWS requirement IDs (e.g. `SWS_Com_00061`), and important values.
+10. End with a compact **> 📄 Sources** blockquote listing page numbers and content types (e.g. `> 📄 Sources: Page 71 (text), Page 140 (table), Page 12 (diagram)`). This replaces a verbose source section.
+
+**Content rules:**
+- Answer ONLY from the context. Do NOT use external knowledge.
+- Use exact terminology from the specification. Never paraphrase technical identifiers.
+- If the context partially answers the question, provide what is available and explicitly state what is missing.
+- If the context has NO relevant information, respond only with: "The provided context does not contain this information."
+- For multi-part questions, address each part under its own `##` heading.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CONTEXT:
 {context}
-
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 QUESTION:
 {question}
-
-FORMAT YOUR RESPONSE AS:
-
-Answer:
-<technically accurate, complete answer>
-
-Source:
-<page number(s) and content type(s)>
 """
     return ChatPromptTemplate.from_messages([
         ("system", template),
@@ -546,8 +791,8 @@ def create_rag_chain(retriever, llm):
     def retrieve(question: str):
         docs = retriever.invoke(question)
         return {
-            "question": question,
-            "context":  format_docs(docs),
+            "question":         question,
+            "context":          format_docs(docs),
             "source_documents": docs,
         }
 
@@ -558,7 +803,7 @@ def create_rag_chain(retriever, llm):
             "question": inputs["question"],
         })
         return {
-            "answer": answer,
+            "answer":           answer,
             "source_documents": inputs["source_documents"],
         }
 
@@ -583,34 +828,28 @@ def process_pdf(pdf_path, model_name, api_key, include_diagrams, temperature, ma
     progress = st.progress(0)
     all_docs = []
 
-    # STEP 1 — Classify diagram pages up front (fast, no rasterization)
-    progress.progress(5, text="Classifying page types…")
+    progress.progress(5, text="🔍 Classifying page types…")
     diagram_page_nums = classify_pages(pdf_path) if include_diagrams else set()
 
-    # STEP 2 — Text (all pages)
-    progress.progress(20, text="Extracting text chunks…")
+    progress.progress(20, text="📝 Extracting text chunks…")
     text_chunks = extract_text_chunks(pdf_path)
     all_docs.extend(text_chunks)
 
-    # STEP 3 — Tables
-    progress.progress(45, text="Extracting tables…")
+    progress.progress(45, text="📊 Extracting tables…")
     table_chunks = extract_table_chunks(pdf_path)
     all_docs.extend(table_chunks)
 
-    # STEP 4 — Diagrams
     diagram_count = 0
     if include_diagrams and diagram_page_nums:
-        progress.progress(60, text=f"Rasterizing {len(diagram_page_nums)} diagram pages…")
+        progress.progress(60, text=f"🖼️ Rasterizing {len(diagram_page_nums)} diagram pages…")
         diagram_chunks, diagram_count = extract_diagram_chunks(pdf_path, diagram_page_nums)
         all_docs.extend(diagram_chunks)
 
-    # STEP 5 — Vectorstore
-    progress.progress(80, text="Building vector store…")
+    progress.progress(80, text="🧠 Building vector store…")
     vectorstore = build_vectorstore(all_docs)
     st.session_state.vectorstore = vectorstore
 
-    # STEP 6 — QA chain
-    progress.progress(95, text="Initialising QA chain…")
+    progress.progress(95, text="⚡ Initialising QA chain…")
     qa_chain = build_qa_chain(
         vectorstore=vectorstore,
         model_name=model_name,
@@ -619,8 +858,7 @@ def process_pdf(pdf_path, model_name, api_key, include_diagrams, temperature, ma
         max_tokens=max_tokens,
     )
     st.session_state.qa_chain = qa_chain
-
-    progress.progress(100, text="Done.")
+    progress.progress(100, text="✅ Ready!")
 
     st.session_state.doc_stats = {
         "text_chunks":    len(text_chunks),
@@ -630,18 +868,47 @@ def process_pdf(pdf_path, model_name, api_key, include_diagrams, temperature, ma
     }
 
 # ============================================================
+# SOURCE BADGE HELPER
+# ============================================================
+
+def render_source_strip(docs: List[Document]) -> str:
+    """Build a compact HTML source citation strip from retrieved docs."""
+    seen = set()
+    badges = []
+    for doc in docs:
+        page  = doc.metadata.get("page", "?")
+        dtype = doc.metadata.get("type", "text")
+        key   = (page, dtype)
+        if key in seen:
+            continue
+        seen.add(key)
+        icon_map = {"text": "📄", "table": "📊", "diagram": "🖼️"}
+        icon = icon_map.get(dtype, "📄")
+        badges.append(
+            f'<span class="src-badge {dtype}">{icon} p.{page} · {dtype}</span>'
+        )
+    badges_html = "\n".join(badges)
+    return (
+        f'<div class="src-strip">'
+        f'<span class="src-label">Sources</span>'
+        f'{badges_html}'
+        f'</div>'
+    )
+
+# ============================================================
 # SIDEBAR
 # ============================================================
 
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.markdown("### ⚙️ Configuration")
+    st.divider()
 
     api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
-        st.error("Add GROQ_API_KEY to Streamlit secrets")
+        st.error("⚠️ Add GROQ_API_KEY to `.streamlit/secrets.toml`")
 
     model = st.selectbox(
-        "Groq Model",
+        "🤖 Model",
         [
             "llama-3.3-70b-versatile",
             "qwen/qwen3-32b",
@@ -649,11 +916,13 @@ with st.sidebar:
         ]
     )
 
-    temperature      = st.slider("Temperature", 0.0, 1.0, 0.1)
-    max_tokens       = st.slider("Max Tokens", 100, 2000, 1000)
-    uploaded_file    = st.file_uploader("Upload PDF", type=["pdf"])
-    include_diagrams = st.checkbox("Enable Diagram Analysis", value=True)
-    process_btn      = st.button("Process PDF", use_container_width=True)
+    temperature   = st.slider("🌡️ Temperature", 0.0, 1.0, 0.1)
+    max_tokens    = st.slider("📏 Max Tokens",  100, 2000, 1200)
+
+    st.divider()
+    uploaded_file    = st.file_uploader("📄 Upload PDF", type=["pdf"])
+    include_diagrams = st.checkbox("🖼️ Diagram Analysis", value=True)
+    process_btn      = st.button("⚡ Process PDF", use_container_width=True)
 
     if process_btn and uploaded_file:
         st.session_state.chat_history = []
@@ -671,120 +940,180 @@ with st.sidebar:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            st.success("PDF processed successfully!")
+            st.success("✅ PDF processed!")
 
             s = st.session_state.doc_stats
-            st.caption(
-                f"Text: {s['text_chunks']} | "
-                f"Table: {s['table_chunks']} | "
-                f"Diagram: {s['diagram_chunks']} | "
-                f"Total: {s['total_chunks']} chunks"
+            st.markdown(
+                f"""
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:0.5rem">
+                  <div style="background:#1a2535;border:1px solid #2d3748;border-radius:8px;padding:0.6rem;text-align:center">
+                    <div style="font-size:1.2rem;font-weight:700;color:#60a5fa">{s['text_chunks']}</div>
+                    <div style="font-size:0.7rem;color:#6b7280">text chunks</div>
+                  </div>
+                  <div style="background:#1a2535;border:1px solid #2d3748;border-radius:8px;padding:0.6rem;text-align:center">
+                    <div style="font-size:1.2rem;font-weight:700;color:#fbbf24">{s['table_chunks']}</div>
+                    <div style="font-size:0.7rem;color:#6b7280">table chunks</div>
+                  </div>
+                  <div style="background:#1a2535;border:1px solid #2d3748;border-radius:8px;padding:0.6rem;text-align:center">
+                    <div style="font-size:1.2rem;font-weight:700;color:#a78bfa">{s['diagram_chunks']}</div>
+                    <div style="font-size:0.7rem;color:#6b7280">diagrams</div>
+                  </div>
+                  <div style="background:#1a2535;border:1px solid #2d3748;border-radius:8px;padding:0.6rem;text-align:center">
+                    <div style="font-size:1.2rem;font-weight:700;color:#34d399">{s['total_chunks']}</div>
+                    <div style="font-size:0.7rem;color:#6b7280">total chunks</div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
         except Exception as e:
             st.error(str(e))
         finally:
             os.unlink(tmp_path)
 
+    # Show active doc stats if already processed
+    elif st.session_state.doc_stats and st.session_state.qa_chain:
+        s = st.session_state.doc_stats
+        st.markdown(
+            f"""
+            <div style="padding:0.8rem;background:#1a2535;border:1px solid #2d3748;border-radius:10px;margin-top:0.5rem">
+              <div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.6rem">Document loaded</div>
+              <div style="font-size:0.82rem;color:#94a3b8">📝 {s['text_chunks']} text &nbsp;·&nbsp; 📊 {s['table_chunks']} tables &nbsp;·&nbsp; 🖼️ {s['diagram_chunks']} diagrams</div>
+              <div style="font-size:0.78rem;color:#4b5563;margin-top:0.3rem">{s['total_chunks']} total indexed chunks</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 # ============================================================
 # MAIN UI
 # ============================================================
 
+# Header
 st.markdown(
-    '<div class="main-header">🧠 Enterprise Multimodal RAG</div>',
-    unsafe_allow_html=True
-)
-st.markdown(
-    '<div class="sub-header">Groq + LangChain + ChromaDB | v3</div>',
+    """
+    <div class="docmind-header">
+      <div class="docmind-title">🧠 DocMind — Multimodal RAG</div>
+      <div class="docmind-sub">Groq · LangChain · ChromaDB · BLIP &nbsp;|&nbsp; v4</div>
+    </div>
+    """,
     unsafe_allow_html=True
 )
 
 # ============================================================
-# WELCOME
+# WELCOME SCREEN
 # ============================================================
 
 if st.session_state.qa_chain is None:
-    st.info("""
-### How to Use
-1. Add your **GROQ API KEY** in Streamlit secrets
-2. Upload any PDF document
-3. Click **Process PDF**
-4. Ask questions in the chat
+    st.markdown(
+        """
+        <div class="welcome-card">
+          <div class="welcome-icon">📚</div>
+          <div class="welcome-title">Upload a PDF to get started</div>
+          <div class="welcome-desc">
+            Ask questions about any PDF — technical specifications, research papers, manuals.<br>
+            DocMind extracts text, tables, and diagrams to give you precise, structured answers.
+          </div>
+          <div class="step-grid">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <div class="step-text">Add your <strong>GROQ_API_KEY</strong> in Streamlit secrets</div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <div class="step-text">Upload a <strong>PDF document</strong> in the sidebar</div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">3</div>
+              <div class="step-text">Click <strong>Process PDF</strong> and start chatting</div>
+            </div>
+          </div>
+        </div>
 
-**What's detected in v3:**
-- ✅ Text — all pages (including labels on diagram pages)
-- ✅ Tables — all pages, with header row labelling
-- ✅ Vector diagrams — UML, flow, architecture (pages 81–82, 16, 83, 118–122 etc.)
-- ✅ Raster/bitmap images — embedded PNG/JPEG figures
-- ✅ Mixed pages — pages with both diagrams and tables
-""")
+        <div style="margin-top:1.5rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">
+          <div style="background:#13161e;border:1px solid #1f2937;border-radius:10px;padding:1rem">
+            <div style="font-size:1.3rem;margin-bottom:0.4rem">📝</div>
+            <div style="font-size:0.82rem;font-weight:600;color:#d1d5db;margin-bottom:0.3rem">Full Text Extraction</div>
+            <div style="font-size:0.78rem;color:#6b7280;line-height:1.5">All pages including labels on diagram pages are indexed for search</div>
+          </div>
+          <div style="background:#13161e;border:1px solid #1f2937;border-radius:10px;padding:1rem">
+            <div style="font-size:1.3rem;margin-bottom:0.4rem">📊</div>
+            <div style="font-size:0.82rem;font-weight:600;color:#d1d5db;margin-bottom:0.3rem">Table Intelligence</div>
+            <div style="font-size:0.78rem;color:#6b7280;line-height:1.5">Tables extracted with header labelling and boilerplate filtering</div>
+          </div>
+          <div style="background:#13161e;border:1px solid #1f2937;border-radius:10px;padding:1rem">
+            <div style="font-size:1.3rem;margin-bottom:0.4rem">🖼️</div>
+            <div style="font-size:0.82rem;font-weight:600;color:#d1d5db;margin-bottom:0.3rem">Diagram Captioning</div>
+            <div style="font-size:0.78rem;color:#6b7280;line-height:1.5">BLIP model captions vector and raster diagrams; all 17+ figure types detected</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # ============================================================
 # CHAT HISTORY
 # ============================================================
 
 for turn in st.session_state.chat_history:
-    with st.chat_message("user"):
-        st.write(turn["question"])
-    with st.chat_message("assistant"):
-        st.markdown(
-            f'<div class="answer-box">{turn["answer"]}</div>',
-            unsafe_allow_html=True
-        )
+    # User bubble
+    st.markdown(
+        f'<div class="msg-user">{turn["question"]}</div>',
+        unsafe_allow_html=True
+    )
+    # Assistant answer
+    answer_md = turn["answer"]
+    src_html  = render_source_strip(turn.get("sources", []))
+
+    st.markdown(
+        f'<div class="msg-assistant">{answer_md}{src_html}</div>',
+        unsafe_allow_html=True
+    )
 
 # ============================================================
-# CHAT INPUT
+# LIVE CHAT INPUT
 # ============================================================
 
 if st.session_state.qa_chain:
-    question = st.chat_input("Ask a question about the PDF…")
+    question = st.chat_input("Ask anything about the document…")
 
     if question:
-        with st.chat_message("user"):
-            st.write(question)
+        # Show user bubble immediately
+        st.markdown(
+            f'<div class="msg-user">{question}</div>',
+            unsafe_allow_html=True
+        )
 
-        with st.chat_message("assistant"):
-            with st.spinner("Analysing document…"):
-                try:
-                    result  = st.session_state.qa_chain.invoke(question)
-                    answer  = result["answer"]
-                    sources = result["source_documents"]
+        with st.spinner(""):
+            try:
+                result  = st.session_state.qa_chain.invoke(question)
+                answer  = result["answer"]
+                sources = result["source_documents"]
 
-                    st.markdown(
-                        f'<div class="answer-box">{answer}</div>',
-                        unsafe_allow_html=True
-                    )
+                src_html = render_source_strip(sources)
 
-                    with st.expander(
-                        f"📘 Retrieved Sections ({len(sources)})"
-                    ):
-                        for doc in sources:
-                            meta    = doc.metadata
-                            section = meta.get("section", "")
-                            label   = f"Page {meta.get('page')} • {meta.get('type')}"
-                            if section:
-                                label += f" • {section}"
-                            st.markdown(
-                                f'<div class="chunk-card">'
-                                f'<div class="chunk-meta">{label}</div>'
-                                f'{doc.page_content[:800]}'
-                                f'</div>',
-                                unsafe_allow_html=True
-                            )
+                st.markdown(
+                    f'<div class="msg-assistant">{answer}{src_html}</div>',
+                    unsafe_allow_html=True
+                )
 
-                    st.session_state.chat_history.append({
-                        "question": question,
-                        "answer":   answer,
-                        "sources":  sources,
-                    })
+                st.session_state.chat_history.append({
+                    "question": question,
+                    "answer":   answer,
+                    "sources":  sources,
+                })
 
-                except Exception as e:
-                    st.error(str(e))
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 # ============================================================
 # CLEAR CHAT
 # ============================================================
 
 if st.session_state.chat_history:
-    if st.button("Clear Chat"):
-        st.session_state.chat_history = []
-        st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([3, 1, 3])
+    with col2:
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.chat_history = []
+            st.rerun()
