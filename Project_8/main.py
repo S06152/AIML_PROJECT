@@ -533,9 +533,9 @@ with st.sidebar:
         col1.metric("Diagrams",     s["diagram_chunks"])
         col2.metric("Total indexed", s["total_chunks"])
         st.caption(
-            f"📑 {s['outline_pages']} sections · "
-            f"🖼️ {s['diagram_pages']} diagram pages · "
-            f"⏭️ {s['skip_pages']} skipped"
+            f"📑 {s.get('outline_pages', 0)} sections · "
+            f"🖼️ {s.get('diagram_pages', 0)} diagram pages · "
+            f"⏭️ {s.get('skip_pages', 0)} skipped"
         )
 
 # ============================================================
