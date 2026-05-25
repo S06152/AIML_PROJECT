@@ -648,7 +648,7 @@ class StreamlitApp:
             st.title("📚 Multimodal PDF RAG")
             st.caption("Text · Tables · Images → Groq LLM")
             st.divider()
-
+            
             # Groq API key input
             groq_key = st.text_input(
                 "🔑 Groq API Key",
