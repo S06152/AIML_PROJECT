@@ -4,9 +4,9 @@ Multimodal RAG Pipeline — Streamlit Cloud App (Class-Based Architecture)
 Open-source stack:
   - PDF parsing   : PyMuPDF (fitz) + pdfplumber
   - Image caption : BLIP  (Salesforce/blip-image-captioning-base)
-  - Embeddings    : HuggingFace BGE-M3  (BAAI/bge-m3)  via langchain-huggingface
+  - Embeddings    : HuggingFace all-MiniLM-L6-v2 via langchain-huggingface
   - Vector store  : ChromaDB  (EphemeralClient — in-memory per session)
-  - LLM           : Groq  (llama-3.1-8b-instant — free tier)
+  - LLM           : Groq  (llama-3.3-70b-versatile — free tier)
   - Framework     : LangChain + Streamlit
 
 Secrets (Streamlit Cloud → Settings → Secrets):
@@ -18,10 +18,10 @@ Local run:
 
 Architecture (classes):
     PDFExtractor          — text / table / image extraction from PDF bytes
-    EmbeddingManager      — HuggingFace BGE-M3 embedding wrapper
-    VectorStoreManager    — ChromaDB in-memory store + dense retriever
+    EmbeddingManager      — HuggingFace embedding wrapper
+    VectorStoreManager    — ChromaDB in-memory store (multi-PDF, single collection)
     GroqLLMManager        — Groq ChatGroq LLM wrapper
-    RAGPipeline           — orchestrator: index + query
+    RAGPipeline           — orchestrator: index + query (supports multiple PDFs)
     StreamlitApp          — UI layer
 """
 
@@ -69,16 +69,19 @@ class Config:
     """Central configuration — change model names / knobs here."""
 
     # Models
-    EMBED_MODEL : str = "sentence-transformers/all-MiniLM-L6-v2"
-    CAPTION_MODEL  : str = "Salesforce/blip-image-captioning-base"
-    GROQ_MODEL     : str = "llama-3.3-70b-versatile"   # free-tier Groq
+    EMBED_MODEL   : str = "sentence-transformers/all-MiniLM-L6-v2"
+    CAPTION_MODEL : str = "Salesforce/blip-image-captioning-base"
+    GROQ_MODEL    : str = "llama-3.3-70b-versatile"
 
     # Chunking
-    CHUNK_SIZE     : int = 800
-    CHUNK_OVERLAP  : int = 150
+    CHUNK_SIZE    : int = 800
+    CHUNK_OVERLAP : int = 150
 
     # Retrieval
-    TOP_K          : int = 5    # docs passed to LLM
+    TOP_K         : int = 5    # docs passed to LLM
+
+    # ChromaDB shared collection name (all PDFs go into one collection)
+    COLLECTION    : str = "multimodal_rag_multi"
 
     # Hardware
     DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -187,13 +190,12 @@ class PDFExtractor:
                     try:
                         base_img  = pdf.extract_image(xref)
                         pil_image = Image.open(io.BytesIO(base_img["image"])).convert("RGB")
-                        # Skip decorative / tiny images
                         if pil_image.width < 50 or pil_image.height < 50:
                             continue
                         caption = self._generate_caption(pil_image)
                         docs.append(Document(
                             page_content=(
-                                f"[Image — page {page_num}, image {img_idx + 1}]\n"
+                                f"[Image - page {page_num}, image {img_idx + 1}]\n"
                                 f"Visual description: {caption}"
                             ),
                             metadata={
@@ -210,8 +212,6 @@ class PDFExtractor:
         log.info("Image extraction: %d captions", len(docs))
         return docs
 
-    # ── Public API ─────────────────────────────────────────────────────────
-
     def extract(self, pdf_path: str) -> list[Document]:
         """Run all three extractors and return a unified document list."""
         text_docs  = self._extract_text(pdf_path)
@@ -227,10 +227,7 @@ class PDFExtractor:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class EmbeddingManager:
-    """
-    Wraps HuggingFace BGE-M3 embeddings via langchain-huggingface.
-    Provides a ready-to-use LangChain embedding object.
-    """
+    """Wraps HuggingFace embeddings via langchain-huggingface."""
 
     def __init__(self, model_name: str = Config.EMBED_MODEL):
         self.model_name = model_name
@@ -247,37 +244,40 @@ class EmbeddingManager:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CLASS 3 — VECTOR STORE MANAGER
+# CLASS 3 — VECTOR STORE MANAGER  (multi-PDF aware)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class VectorStoreManager:
     """
-    Manages an in-memory ChromaDB collection.
-    Exposes a LangChain retriever for downstream use.
+    Manages a single in-memory ChromaDB collection that accumulates documents
+    from ALL indexed PDFs. New PDFs are appended; nothing is ever wiped.
     """
 
-    def __init__(self, embedding_manager: EmbeddingManager, collection_name: str = "multimodal_rag"):
+    def __init__(self, embedding_manager: EmbeddingManager):
         self.embedding_manager = embedding_manager
-        self.collection_name   = collection_name
         self.vectorstore: Chroma | None = None
-        # EphemeralClient → in-memory, no disk writes, works on Streamlit Cloud
         self._chroma_client = chromadb.EphemeralClient()
 
-    def index_documents(self, documents: list[Document]) -> None:
-        """Embed and store all documents into ChromaDB."""
-        log.info("Indexing %d documents into ChromaDB…", len(documents))
-        self.vectorstore = Chroma.from_documents(
-            documents       = documents,
-            embedding       = self.embedding_manager.get_embeddings(),
-            client          = self._chroma_client,
-            collection_name = self.collection_name,
-        )
-        log.info("ChromaDB indexing complete — collection: %s", self.collection_name)
+    def add_documents(self, documents: list[Document]) -> None:
+        """Embed and ADD documents into the shared collection."""
+        log.info("Adding %d documents to ChromaDB collection '%s'",
+                 len(documents), Config.COLLECTION)
+        if self.vectorstore is None:
+            # First call — create the collection
+            self.vectorstore = Chroma.from_documents(
+                documents       = documents,
+                embedding       = self.embedding_manager.get_embeddings(),
+                client          = self._chroma_client,
+                collection_name = Config.COLLECTION,
+            )
+        else:
+            # Subsequent calls — append to existing collection
+            self.vectorstore.add_documents(documents)
+        log.info("ChromaDB updated — all indexed PDFs are searchable.")
 
     def get_retriever(self, k: int = Config.TOP_K):
-        """Return a LangChain retriever backed by ChromaDB similarity search."""
         if self.vectorstore is None:
-            raise RuntimeError("Call index_documents() before get_retriever().")
+            raise RuntimeError("No documents indexed yet.")
         return self.vectorstore.as_retriever(
             search_type   = "similarity",
             search_kwargs = {"k": k},
@@ -292,26 +292,23 @@ class VectorStoreManager:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class GroqLLMManager:
-    """
-    Wraps the Groq ChatGroq LLM (llama-3.1-8b-instant, free tier).
-    Uses ChatPromptTemplate with system + human messages.
-    Provides a generate() method that accepts a formatted prompt string.
-    """
+    """Wraps Groq ChatGroq LLM with a ChatPromptTemplate chain."""
 
-    # RAG prompt using ChatPromptTemplate (system + human message structure)
     CHAT_PROMPT = ChatPromptTemplate.from_messages([
         (
             "system",
             (
-                "You are an expert assistant that answers questions strictly based on the provided context. "
-                "The context may contain text excerpts, table data (in Markdown), and image descriptions "
-                "extracted from a PDF.\n\n"
+                "You are an expert assistant that answers questions strictly based on the "
+                "provided context. The context may contain text excerpts, table data (in "
+                "Markdown), and image descriptions extracted from one or more PDF documents.\n\n"
                 "Instructions:\n"
                 "- Answer concisely and accurately using ONLY the context provided.\n"
+                "- If the answer spans multiple PDFs, clearly state which document each piece "
+                "of information comes from.\n"
                 "- If the answer involves a table, reference the relevant rows and columns.\n"
                 "- If the answer involves an image, reference the visual description.\n"
-                "- If the context lacks enough information, say "
-                "\"I don't have enough information to answer this.\""
+                "- If the context lacks enough information, say: "
+                "'I don't have enough information to answer this.'"
             ),
         ),
         (
@@ -328,47 +325,40 @@ class GroqLLMManager:
             temperature  = 0.1,
             max_tokens   = 1024,
         )
-        # Build a simple chain: prompt | llm
         self.chain = self.CHAT_PROMPT | self.llm
 
     def generate(self, context: str, question: str) -> str:
-        """Format the RAG ChatPrompt and call the Groq API; return the answer string."""
         response = self.chain.invoke({"context": context, "question": question})
         answer   = response.content if hasattr(response, "content") else str(response)
         return answer.strip()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CLASS 5 — RAG PIPELINE (Orchestrator)
+# CLASS 5 — RAG PIPELINE (Orchestrator — multi-PDF)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class RAGPipeline:
     """
-    End-to-end orchestrator:
-      PDF upload → PDFExtractor → EmbeddingManager → VectorStoreManager
-               → similarity retrieval → GroqLLMManager → Answer
+    End-to-end orchestrator with multi-PDF support.
 
-    Usage:
-        pipeline = RAGPipeline(groq_api_key="gsk_...")
-        pipeline.index(uploaded_file, status_callback)
-        result   = pipeline.query("What does the table show?")
+    - A single VectorStoreManager accumulates documents from every PDF.
+    - index_one(uploaded_file) adds one PDF; call repeatedly for more.
+    - query() searches across ALL indexed PDFs simultaneously.
+    - Duplicate filenames are automatically skipped.
     """
 
     def __init__(self, groq_api_key: str):
-        # Instantiate all components
-        self.embedding_manager    = EmbeddingManager()
+        self.embedding_manager    = _load_embedding_manager()   # cached loader
         self.vector_store_manager = VectorStoreManager(self.embedding_manager)
         self.llm_manager          = GroqLLMManager(api_key=groq_api_key)
 
-        # Will be populated after indexing
-        self.documents : list[Document] = []
-        self.pdf_name  : str            = ""
+        # Registry: filename -> doc count  (insertion-ordered dict)
+        self.indexed_pdfs : dict[str, int] = {}
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
     @staticmethod
     def _build_context(docs: list[Document]) -> str:
-        """Format retrieved documents into a single context block."""
         parts = []
         for i, doc in enumerate(docs, 1):
             ctype  = doc.metadata.get("content_type", "text")
@@ -379,86 +369,76 @@ class RAGPipeline:
             )
         return "\n\n---\n\n".join(parts)
 
-    # ── Indexing ───────────────────────────────────────────────────────────
+    # ── Single-PDF indexing ────────────────────────────────────────────────
 
-    def index(self, uploaded_file, status_callback=None) -> int:
+    def index_one(self, uploaded_file, status_callback=None) -> int:
         """
-        Parse the uploaded Streamlit file and index all content into ChromaDB.
-
-        Args:
-            uploaded_file:   Streamlit UploadedFile object.
-            status_callback: Optional callable(str) for progress messages.
-
-        Returns:
-            Total number of indexed documents.
+        Parse ONE PDF and ADD its documents to the shared index.
+        Returns 0 and skips silently if already indexed.
         """
+        pdf_name = uploaded_file.name
+
+        if pdf_name in self.indexed_pdfs:
+            msg = f"'{pdf_name}' is already indexed — skipping."
+            log.warning(msg)
+            if status_callback:
+                status_callback(f"skipped:{msg}")
+            return 0
+
         def _log(msg: str):
             log.info(msg)
             if status_callback:
                 status_callback(msg)
 
-        self.pdf_name  = uploaded_file.name
-        self.documents = []
-
-        # Save to temp file (PyMuPDF / pdfplumber need a real path)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_file.read())
             tmp_path = tmp.name
 
         try:
-            # Load BLIP lazily here so the cached resource is reused
             cap_processor, cap_model = _load_caption_model()
             extractor = PDFExtractor(
                 caption_processor = cap_processor,
                 caption_model     = cap_model,
             )
 
-            _log("📄 Extracting text…")
+            _log(f"[{pdf_name}] Extracting text...")
             text_docs = extractor._extract_text(tmp_path)
-            _log(f"   ✅ {len(text_docs)} text chunks")
+            _log(f"   {len(text_docs)} text chunks")
 
-            _log("📊 Extracting tables…")
+            _log(f"[{pdf_name}] Extracting tables...")
             table_docs = extractor._extract_tables(tmp_path)
-            _log(f"   ✅ {len(table_docs)} tables")
+            _log(f"   {len(table_docs)} tables")
 
-            _log("🖼️ Captioning images…")
+            _log(f"[{pdf_name}] Captioning images...")
+            if Config.DEVICE == "cpu":
+                _log("   Running on CPU - image captioning may take a few minutes...")
             image_docs = extractor._extract_images(tmp_path)
-            _log(f"   ✅ {len(image_docs)} image captions")
+            _log(f"   {len(image_docs)} image captions")
 
-            self.documents = text_docs + table_docs + image_docs
-            _log(f"📦 Total: {len(self.documents)} documents")
+            new_docs = text_docs + table_docs + image_docs
+            _log(f"[{pdf_name}] Total: {len(new_docs)} documents - adding to index...")
 
-            _log("🔢 Building ChromaDB vector index…")
-            self.vector_store_manager.index_documents(self.documents)
-            _log("✅ Indexing complete!")
+            self.vector_store_manager.add_documents(new_docs)
+            self.indexed_pdfs[pdf_name] = len(new_docs)
+
+            _log(f"[{pdf_name}] Done!")
 
         finally:
             os.unlink(tmp_path)
 
-        return len(self.documents)
+        return len(new_docs)
 
     # ── Querying ───────────────────────────────────────────────────────────
 
     def query(self, question: str) -> dict[str, Any]:
-        """
-        Run the full retrieval-generation pipeline for a user question.
-
-        Returns:
-            {
-              "answer" : str,
-              "sources": list[dict],   # content_type, page, source
-              "top_docs": list[Document]
-            }
-        """
+        """Retrieve and answer across ALL indexed PDFs."""
         if not self.vector_store_manager.is_ready():
-            raise RuntimeError("Pipeline not indexed. Call index() first.")
+            raise RuntimeError("No PDFs indexed. Call index_one() first.")
 
-        # Step 1 — Similarity retrieval from ChromaDB
         retriever = self.vector_store_manager.get_retriever(k=Config.TOP_K)
         top_docs  = retriever.invoke(question)
-        log.info("Similarity retrieval returned %d documents", len(top_docs))
+        log.info("Similarity retrieval: %d documents", len(top_docs))
 
-        # Step 2 — Build context and generate answer via Groq
         context = self._build_context(top_docs)
         answer  = self.llm_manager.generate(context=context, question=question)
 
@@ -471,29 +451,31 @@ class RAGPipeline:
             for d in top_docs
         ]
 
-        return {
-            "answer"   : answer,
-            "sources"  : sources,
-            "top_docs" : top_docs,
-        }
+        return {"answer": answer, "sources": sources, "top_docs": top_docs}
 
     def is_ready(self) -> bool:
-        """Return True once a PDF has been indexed."""
         return self.vector_store_manager.is_ready()
 
+    @property
+    def pdf_count(self) -> int:
+        return len(self.indexed_pdfs)
+
+    @property
+    def pdf_names(self) -> list[str]:
+        return list(self.indexed_pdfs.keys())
+
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CACHED MODEL LOADERS  (Streamlit — loaded once per session)
+# CACHED MODEL LOADERS
 # ═══════════════════════════════════════════════════════════════════════════
 
-@st.cache_resource(show_spinner="Loading embedding model (BGE-M3)…")
+@st.cache_resource(show_spinner="Loading embedding model...")
 def _load_embedding_manager() -> EmbeddingManager:
     return EmbeddingManager()
 
 
-@st.cache_resource(show_spinner="Loading image captioning model (BLIP)…")
+@st.cache_resource(show_spinner="Loading image captioning model (BLIP)...")
 def _load_caption_model():
-    """Returns (BlipProcessor, BlipForConditionalGeneration) — cached once."""
     dtype     = torch.float16 if Config.DEVICE == "cuda" else torch.float32
     processor = BlipProcessor.from_pretrained(Config.CAPTION_MODEL)
     model     = BlipForConditionalGeneration.from_pretrained(
@@ -508,11 +490,9 @@ def _load_caption_model():
 
 class StreamlitApp:
     """
-    Encapsulates all Streamlit UI logic.
-    Call StreamlitApp().run() as the entry point.
+    Streamlit UI — supports uploading and querying multiple PDFs in one session.
     """
 
-    # Content-type → emoji badge
     BADGE = {"text": "📝", "table": "📊", "image": "🖼️"}
 
     def __init__(self):
@@ -528,10 +508,8 @@ class StreamlitApp:
     @staticmethod
     def _init_session_state():
         defaults = {
-            "pipeline"     : None,   # RAGPipeline instance
-            "chat_history" : [],     # list of {question, answer, sources}
-            "pdf_name"     : "",
-            "groq_api_key" : "",
+            "pipeline"     : None,
+            "chat_history" : [],
         }
         for key, val in defaults.items():
             if key not in st.session_state:
@@ -539,17 +517,12 @@ class StreamlitApp:
 
     # ── Sidebar ────────────────────────────────────────────────────────────
 
-    def _render_sidebar(self) -> tuple[str, Any, bool]:
-        """
-        Render sidebar widgets.
-        Returns (groq_api_key, uploaded_file, index_clicked).
-        """
+    def _render_sidebar(self) -> tuple[str, list, bool]:
         with st.sidebar:
             st.title("📚 Multimodal PDF RAG")
-            st.caption("Text · Tables · Images → Groq LLM")
+            st.caption("Text · Tables · Images - Groq LLM")
             st.divider()
 
-            # Groq API key input
             groq_key = st.text_input(
                 "🔑 Groq API Key",
                 type  = "password",
@@ -559,64 +532,89 @@ class StreamlitApp:
 
             st.divider()
 
-            # PDF uploader
-            uploaded_file = st.file_uploader(
-                "📄 Upload PDF",
-                type = ["pdf"],
-                help = "Any PDF with text, tables, or images.",
+            # ── Multi-file uploader ────────────────────────────────────────
+            uploaded_files = st.file_uploader(
+                "📄 Upload PDF(s)",
+                type                  = ["pdf"],
+                accept_multiple_files = True,
+                help                  = "Select one or more PDFs. Already-indexed files are skipped automatically.",
             )
 
             index_clicked = st.button(
-                "⚡ Index PDF",
-                disabled            = (uploaded_file is None or not groq_key),
+                "⚡ Index PDF(s)",
+                disabled            = (not uploaded_files or not groq_key),
                 use_container_width = True,
                 type                = "primary",
             )
 
+            # ── Indexed PDFs panel ─────────────────────────────────────────
+            pipeline: RAGPipeline | None = st.session_state.pipeline
+            if pipeline and pipeline.pdf_count > 0:
+                st.divider()
+                st.markdown(f"**📂 Indexed PDFs ({pipeline.pdf_count})**")
+                for name, count in pipeline.indexed_pdfs.items():
+                    st.markdown(f"- `{name}`  ({count} docs)")
+
+            # ── Clear all button ───────────────────────────────────────────
+            if pipeline and pipeline.pdf_count > 0:
+                st.divider()
+                if st.button("🗑️ Clear all & start over", use_container_width=True):
+                    st.session_state.pipeline     = None
+                    st.session_state.chat_history = []
+                    st.rerun()
+
             st.divider()
             st.markdown("""
 **Stack**
-- 🤗 Embeddings : `BAAI/bge-m3`
+- 🤗 Embeddings : `all-MiniLM-L6-v2`
 - 🔎 Retrieval  : ChromaDB Similarity Search
 - 🖼️ Captions   : `BLIP`
 - 🗄️ Store      : ChromaDB (in-memory)
-- 🚀 LLM        : Groq `llama-3.1-8b-instant`
+- 🚀 LLM        : Groq `llama-3.3-70b-versatile`
             """)
 
-        return groq_key, uploaded_file, index_clicked
+        return groq_key, uploaded_files, index_clicked
 
     # ── Indexing flow ──────────────────────────────────────────────────────
 
-    def _handle_indexing(self, groq_key: str, uploaded_file) -> None:
-        """Instantiate RAGPipeline and run indexing with a live status panel."""
-        # Reset state for a fresh document
-        st.session_state.pipeline     = None
-        st.session_state.chat_history = []
-        st.session_state.pdf_name     = uploaded_file.name
+    def _handle_indexing(self, groq_key: str, uploaded_files: list) -> None:
+        """Create or reuse the RAGPipeline; index every uploaded file."""
+        if st.session_state.pipeline is None:
+            st.session_state.pipeline = RAGPipeline(groq_api_key=groq_key)
 
-        pipeline = RAGPipeline(groq_api_key=groq_key)
+        pipeline: RAGPipeline = st.session_state.pipeline
 
-        messages: list[str] = []
+        for uploaded_file in uploaded_files:
+            pdf_name = uploaded_file.name
 
-        def status_callback(msg: str):
-            messages.append(msg)
+            if pdf_name in pipeline.indexed_pdfs:
+                st.info(f"ℹ️ **{pdf_name}** is already indexed — skipped.")
+                continue
 
-        with st.status("Processing PDF…", expanded=True) as status_box:
-            total = pipeline.index(uploaded_file, status_callback=status_callback)
-            for msg in messages:
-                status_box.write(msg)
-            status_box.update(
-                label = f"✅ Indexed {total} documents from **{uploaded_file.name}**",
-                state = "complete",
-            )
+            messages: list[str] = []
 
-        st.session_state.pipeline = pipeline
-        st.success(f"✅ **{uploaded_file.name}** is ready — ask your first question below!")
+            def status_callback(msg: str):
+                messages.append(msg)
+
+            with st.status(f"Processing **{pdf_name}**...", expanded=True) as status_box:
+                total = pipeline.index_one(uploaded_file,
+                                           status_callback=status_callback)
+                for msg in messages:
+                    # Filter out the internal skip prefix
+                    if not msg.startswith("skipped:"):
+                        status_box.write(msg)
+                if total > 0:
+                    status_box.update(
+                        label = f"✅ Indexed {total} documents from **{pdf_name}**",
+                        state = "complete",
+                    )
+
+        names = ", ".join(f"**{n}**" for n in pipeline.pdf_names)
+        st.success(f"✅ Active knowledge base: {names}")
 
     # ── Chat history ───────────────────────────────────────────────────────
 
     def _render_chat_history(self) -> None:
-        """Re-render all previous turns from session state."""
         for turn in st.session_state.chat_history:
             with st.chat_message("user"):
                 st.write(turn["question"])
@@ -625,7 +623,6 @@ class StreamlitApp:
                 self._render_sources(turn.get("sources", []))
 
     def _render_sources(self, sources: list[dict]) -> None:
-        """Render a collapsible sources panel beneath an answer."""
         if not sources:
             return
         with st.expander("📎 Sources used"):
@@ -639,20 +636,17 @@ class StreamlitApp:
     # ── Query flow ─────────────────────────────────────────────────────────
 
     def _handle_query(self, question: str) -> None:
-        """Run the RAG pipeline for a user question and render the result."""
         pipeline: RAGPipeline = st.session_state.pipeline
 
         with st.chat_message("user"):
             st.write(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Retrieving context and generating answer…"):
+            with st.spinner("Searching across all PDFs and generating answer..."):
                 result = pipeline.query(question)
-
             st.write(result["answer"])
             self._render_sources(result["sources"])
 
-        # Persist in chat history
         st.session_state.chat_history.append({
             "question": question,
             "answer"  : result["answer"],
@@ -662,23 +656,30 @@ class StreamlitApp:
     # ── Main entry point ───────────────────────────────────────────────────
 
     def run(self) -> None:
-        """Render the full Streamlit app."""
-        groq_key, uploaded_file, index_clicked = self._render_sidebar()
+        groq_key, uploaded_files, index_clicked = self._render_sidebar()
 
-        # ── Indexing triggered ────────────────────────────────────────────
-        if index_clicked and uploaded_file and groq_key:
-            self._handle_indexing(groq_key, uploaded_file)
+        if index_clicked and uploaded_files and groq_key:
+            self._handle_indexing(groq_key, uploaded_files)
 
-        # ── Nothing indexed yet ───────────────────────────────────────────
-        if st.session_state.pipeline is None:
-            st.info("👈 Upload a PDF and click **Index PDF** to get started.")
+        pipeline: RAGPipeline | None = st.session_state.pipeline
+        if pipeline is None or not pipeline.is_ready():
+            st.info("👈 Upload one or more PDFs and click **Index PDF(s)** to get started.")
             return
 
-        # ── Chat interface ────────────────────────────────────────────────
-        st.header(f"💬 Chat with: `{st.session_state.pdf_name}`")
+        # ── Chat header ────────────────────────────────────────────────────
+        if pipeline.pdf_count == 1:
+            st.header(f"💬 Chat with: `{pipeline.pdf_names[0]}`")
+        else:
+            st.header(f"💬 Chat across {pipeline.pdf_count} PDFs")
+            cols = st.columns(min(pipeline.pdf_count, 4))
+            for col, name in zip(cols, pipeline.pdf_names):
+                col.markdown(f"📄 `{name}`")
+
         self._render_chat_history()
 
-        question = st.chat_input("Ask anything about the PDF…")
+        question = st.chat_input(
+            "Ask anything — answers draw from all indexed PDFs..."
+        )
         if question:
             if not groq_key:
                 st.warning("Please enter your Groq API key in the sidebar.")
