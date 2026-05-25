@@ -69,9 +69,9 @@ class Config:
     """Central configuration — change model names / knobs here."""
 
     # Models
-    EMBED_MODEL    : str = "BAAI/bge-m3"
+    EMBED_MODEL : str = "sentence-transformers/all-MiniLM-L6-v2"
     CAPTION_MODEL  : str = "Salesforce/blip-image-captioning-base"
-    GROQ_MODEL     : str = "llama-3.1-8b-instant"   # free-tier Groq
+    GROQ_MODEL     : str = "llama-3.3-70b-versatile"   # free-tier Groq
 
     # Chunking
     CHUNK_SIZE     : int = 800
