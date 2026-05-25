@@ -5,8 +5,6 @@ Open-source stack:
   - PDF parsing   : PyMuPDF (fitz) + pdfplumber
   - Image caption : BLIP  (Salesforce/blip-image-captioning-base)
   - Embeddings    : HuggingFace BGE-M3  (BAAI/bge-m3)  via langchain-huggingface
-  - Sparse search : BM25  (rank_bm25)  via LangChain BM25Retriever
-  - Reranker      : BGE-Reranker-v2-M3 (BAAI/bge-reranker-v2-m3)
   - Vector store  : ChromaDB  (EphemeralClient — in-memory per session)
   - LLM           : Groq  (llama-3.1-8b-instant — free tier)
   - Framework     : LangChain + Streamlit
@@ -22,8 +20,6 @@ Architecture (classes):
     PDFExtractor          — text / table / image extraction from PDF bytes
     EmbeddingManager      — HuggingFace BGE-M3 embedding wrapper
     VectorStoreManager    — ChromaDB in-memory store + dense retriever
-    HybridRetrieverBuilder— EnsembleRetriever (dense BM25 fusion via RRF)
-    Reranker              — BGE cross-encoder reranker
     GroqLLMManager        — Groq ChatGroq LLM wrapper
     RAGPipeline           — orchestrator: index + query
     StreamlitApp          — UI layer
@@ -49,16 +45,13 @@ from PIL import Image
 # ── ML ─────────────────────────────────────────────────────────────────────
 import torch
 from transformers import BlipProcessor, BlipForConditionalGeneration
-from sentence_transformers import CrossEncoder
 
 # ── LangChain ──────────────────────────────────────────────────────────────
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.prompts import PromptTemplate
-from langchain.retrievers import EnsembleRetriever
-from langchain_community.retrievers import BM25Retriever
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 
 # ── ChromaDB ───────────────────────────────────────────────────────────────
@@ -77,7 +70,6 @@ class Config:
 
     # Models
     EMBED_MODEL    : str = "BAAI/bge-m3"
-    RERANKER_MODEL : str = "BAAI/bge-reranker-v2-m3"
     CAPTION_MODEL  : str = "Salesforce/blip-image-captioning-base"
     GROQ_MODEL     : str = "llama-3.1-8b-instant"   # free-tier Groq
 
@@ -86,11 +78,7 @@ class Config:
     CHUNK_OVERLAP  : int = 150
 
     # Retrieval
-    TOP_K_DENSE    : int = 10   # candidates from ChromaDB
-    TOP_K_SPARSE   : int = 10   # candidates from BM25
-    TOP_K_RERANK   : int = 5    # final docs passed to LLM
-    DENSE_WEIGHT   : float = 0.6
-    SPARSE_WEIGHT  : float = 0.4
+    TOP_K          : int = 5    # docs passed to LLM
 
     # Hardware
     DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -265,7 +253,7 @@ class EmbeddingManager:
 class VectorStoreManager:
     """
     Manages an in-memory ChromaDB collection.
-    Exposes a LangChain dense retriever for downstream use.
+    Exposes a LangChain retriever for downstream use.
     """
 
     def __init__(self, embedding_manager: EmbeddingManager, collection_name: str = "multimodal_rag"):
@@ -286,10 +274,10 @@ class VectorStoreManager:
         )
         log.info("ChromaDB indexing complete — collection: %s", self.collection_name)
 
-    def get_dense_retriever(self, k: int = Config.TOP_K_DENSE):
+    def get_retriever(self, k: int = Config.TOP_K):
         """Return a LangChain retriever backed by ChromaDB similarity search."""
         if self.vectorstore is None:
-            raise RuntimeError("Call index_documents() before get_dense_retriever().")
+            raise RuntimeError("Call index_documents() before get_retriever().")
         return self.vectorstore.as_retriever(
             search_type   = "similarity",
             search_kwargs = {"k": k},
@@ -300,110 +288,37 @@ class VectorStoreManager:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CLASS 4 — HYBRID RETRIEVER BUILDER
-# ═══════════════════════════════════════════════════════════════════════════
-
-class HybridRetrieverBuilder:
-    """
-    Combines a dense ChromaDB retriever with a sparse BM25 retriever
-    using LangChain's EnsembleRetriever (Reciprocal Rank Fusion).
-    """
-
-    def __init__(
-        self,
-        dense_weight : float = Config.DENSE_WEIGHT,
-        sparse_weight: float = Config.SPARSE_WEIGHT,
-        sparse_k     : int   = Config.TOP_K_SPARSE,
-    ):
-        self.dense_weight  = dense_weight
-        self.sparse_weight = sparse_weight
-        self.sparse_k      = sparse_k
-
-    def build(
-        self,
-        documents      : list[Document],
-        dense_retriever,
-    ) -> EnsembleRetriever:
-        """
-        Build and return an EnsembleRetriever.
-
-        Args:
-            documents:       Full document list (needed by BM25).
-            dense_retriever: ChromaDB-backed LangChain retriever.
-        """
-        log.info(
-            "Building hybrid retriever: dense=%.1f, sparse=%.1f, sparse_k=%d",
-            self.dense_weight, self.sparse_weight, self.sparse_k,
-        )
-        bm25_retriever   = BM25Retriever.from_documents(documents)
-        bm25_retriever.k = self.sparse_k
-
-        return EnsembleRetriever(
-            retrievers = [dense_retriever, bm25_retriever],
-            weights    = [self.dense_weight, self.sparse_weight],
-        )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CLASS 5 — RERANKER
-# ═══════════════════════════════════════════════════════════════════════════
-
-class Reranker:
-    """
-    Cross-encoder reranker using BAAI/bge-reranker-v2-m3.
-    Scores every (query, document) pair and returns the top-k.
-    """
-
-    def __init__(self, model_name: str = Config.RERANKER_MODEL):
-        log.info("Loading reranker: %s (device=%s)", model_name, Config.DEVICE)
-        self.model = CrossEncoder(model_name, max_length=512, device=Config.DEVICE)
-
-    def rerank(
-        self,
-        query    : str,
-        documents: list[Document],
-        top_k    : int = Config.TOP_K_RERANK,
-    ) -> list[Document]:
-        """Score all candidate documents and return the highest-scoring top_k."""
-        if not documents:
-            return []
-        pairs  = [(query, doc.page_content) for doc in documents]
-        scores = self.model.predict(pairs)
-        ranked = sorted(zip(scores, documents), key=lambda x: x[0], reverse=True)
-        result = [doc for _, doc in ranked[:top_k]]
-        log.info("Reranker: %d → top %d", len(documents), len(result))
-        return result
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CLASS 6 — GROQ LLM MANAGER
+# CLASS 4 — GROQ LLM MANAGER
 # ═══════════════════════════════════════════════════════════════════════════
 
 class GroqLLMManager:
     """
     Wraps the Groq ChatGroq LLM (llama-3.1-8b-instant, free tier).
+    Uses ChatPromptTemplate with system + human messages.
     Provides a generate() method that accepts a formatted prompt string.
     """
 
-    # RAG prompt template (shared across all instances)
-    PROMPT_TEMPLATE = PromptTemplate(
-        input_variables=["context", "question"],
-        template="""You are an expert assistant that answers questions strictly based on the provided context.
-The context may contain text excerpts, table data (in Markdown), and image descriptions extracted from a PDF.
-
-Context:
-{context}
-
-Question: {question}
-
-Instructions:
-- Answer concisely and accurately using ONLY the context above.
-- If the answer involves a table, reference the relevant rows and columns.
-- If the answer involves an image, reference the visual description.
-- If the context lacks enough information, say "I don't have enough information to answer this."
-
-Answer:""",
-    )
+    # RAG prompt using ChatPromptTemplate (system + human message structure)
+    CHAT_PROMPT = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            (
+                "You are an expert assistant that answers questions strictly based on the provided context. "
+                "The context may contain text excerpts, table data (in Markdown), and image descriptions "
+                "extracted from a PDF.\n\n"
+                "Instructions:\n"
+                "- Answer concisely and accurately using ONLY the context provided.\n"
+                "- If the answer involves a table, reference the relevant rows and columns.\n"
+                "- If the answer involves an image, reference the visual description.\n"
+                "- If the context lacks enough information, say "
+                "\"I don't have enough information to answer this.\""
+            ),
+        ),
+        (
+            "human",
+            "Context:\n{context}\n\nQuestion: {question}",
+        ),
+    ])
 
     def __init__(self, api_key: str, model_name: str = Config.GROQ_MODEL):
         log.info("Initialising Groq LLM: %s", model_name)
@@ -413,24 +328,25 @@ Answer:""",
             temperature  = 0.1,
             max_tokens   = 1024,
         )
+        # Build a simple chain: prompt | llm
+        self.chain = self.CHAT_PROMPT | self.llm
 
     def generate(self, context: str, question: str) -> str:
-        """Format the RAG prompt and call the Groq API; return the answer string."""
-        prompt   = self.PROMPT_TEMPLATE.format(context=context, question=question)
-        response = self.llm.invoke(prompt)
+        """Format the RAG ChatPrompt and call the Groq API; return the answer string."""
+        response = self.chain.invoke({"context": context, "question": question})
         answer   = response.content if hasattr(response, "content") else str(response)
         return answer.strip()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CLASS 7 — RAG PIPELINE (Orchestrator)
+# CLASS 5 — RAG PIPELINE (Orchestrator)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class RAGPipeline:
     """
     End-to-end orchestrator:
       PDF upload → PDFExtractor → EmbeddingManager → VectorStoreManager
-               → HybridRetrieverBuilder → Reranker → GroqLLMManager → Answer
+               → similarity retrieval → GroqLLMManager → Answer
 
     Usage:
         pipeline = RAGPipeline(groq_api_key="gsk_...")
@@ -442,8 +358,6 @@ class RAGPipeline:
         # Instantiate all components
         self.embedding_manager    = EmbeddingManager()
         self.vector_store_manager = VectorStoreManager(self.embedding_manager)
-        self.hybrid_builder       = HybridRetrieverBuilder()
-        self.reranker             = Reranker()
         self.llm_manager          = GroqLLMManager(api_key=groq_api_key)
 
         # Will be populated after indexing
@@ -454,7 +368,7 @@ class RAGPipeline:
 
     @staticmethod
     def _build_context(docs: list[Document]) -> str:
-        """Format top-k reranked documents into a single context block."""
+        """Format retrieved documents into a single context block."""
         parts = []
         for i, doc in enumerate(docs, 1):
             ctype  = doc.metadata.get("content_type", "text")
@@ -538,22 +452,13 @@ class RAGPipeline:
         """
         if not self.vector_store_manager.is_ready():
             raise RuntimeError("Pipeline not indexed. Call index() first.")
-        if not self.documents:
-            raise RuntimeError("Document list is empty; cannot build BM25 index.")
 
-        # Step 1 — Hybrid retrieval (dense + BM25)
-        dense_retriever  = self.vector_store_manager.get_dense_retriever(k=Config.TOP_K_DENSE)
-        hybrid_retriever = self.hybrid_builder.build(
-            documents       = self.documents,
-            dense_retriever = dense_retriever,
-        )
-        candidates = hybrid_retriever.invoke(question)
-        log.info("Hybrid retrieval returned %d candidates", len(candidates))
+        # Step 1 — Similarity retrieval from ChromaDB
+        retriever = self.vector_store_manager.get_retriever(k=Config.TOP_K)
+        top_docs  = retriever.invoke(question)
+        log.info("Similarity retrieval returned %d documents", len(top_docs))
 
-        # Step 2 — Rerank
-        top_docs = self.reranker.rerank(question, candidates, top_k=Config.TOP_K_RERANK)
-
-        # Step 3 — Build context and generate answer via Groq
+        # Step 2 — Build context and generate answer via Groq
         context = self._build_context(top_docs)
         answer  = self.llm_manager.generate(context=context, question=question)
 
@@ -586,11 +491,6 @@ def _load_embedding_manager() -> EmbeddingManager:
     return EmbeddingManager()
 
 
-@st.cache_resource(show_spinner="Loading reranker (BGE-Reranker-v2-M3)…")
-def _load_reranker() -> Reranker:
-    return Reranker()
-
-
 @st.cache_resource(show_spinner="Loading image captioning model (BLIP)…")
 def _load_caption_model():
     """Returns (BlipProcessor, BlipForConditionalGeneration) — cached once."""
@@ -603,7 +503,7 @@ def _load_caption_model():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CLASS 8 — STREAMLIT APP
+# CLASS 6 — STREAMLIT APP
 # ═══════════════════════════════════════════════════════════════════════════
 
 class StreamlitApp:
@@ -648,7 +548,7 @@ class StreamlitApp:
             st.title("📚 Multimodal PDF RAG")
             st.caption("Text · Tables · Images → Groq LLM")
             st.divider()
-            
+
             # Groq API key input
             groq_key = st.text_input(
                 "🔑 Groq API Key",
@@ -668,17 +568,16 @@ class StreamlitApp:
 
             index_clicked = st.button(
                 "⚡ Index PDF",
-                disabled         = (uploaded_file is None or not groq_key),
+                disabled            = (uploaded_file is None or not groq_key),
                 use_container_width = True,
-                type             = "primary",
+                type                = "primary",
             )
 
             st.divider()
             st.markdown("""
 **Stack**
 - 🤗 Embeddings : `BAAI/bge-m3`
-- 🔎 Retrieval  : Dense (ChromaDB) + BM25
-- 🏆 Reranker   : `BGE-Reranker-v2-M3`
+- 🔎 Retrieval  : ChromaDB Similarity Search
 - 🖼️ Captions   : `BLIP`
 - 🗄️ Store      : ChromaDB (in-memory)
 - 🚀 LLM        : Groq `llama-3.1-8b-instant`

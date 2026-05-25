@@ -1,30 +1,18 @@
 langchain-core
+langchain-community
 langchain-text-splitters
 protobuf==3.20.3
-
-# ── PDF parsing ────────────────────────────────────────────────────────────
-PyMuPDF==1.24.3
-pdfplumber==0.11.1
-Pillow>=10.0.0
-
-# ── ML / Embeddings / Reranker / Captioning ────────────────────────────────
-torch>=2.1.0
-transformers>=4.40.0
-sentence-transformers>=3.0.0
-accelerate>=0.27.0
-
-# ── Sparse retrieval ───────────────────────────────────────────────────────
-rank-bm25==0.2.2
-
-# ── Vector store ───────────────────────────────────────────────────────────
-chromadb>=0.5.0
-
-# ── LangChain ──────────────────────────────────────────────────────────────
-langchain>=0.2.0
-langchain-community>=0.2.0
-langchain-huggingface>=0.0.3
-langchain-groq>=0.1.6
-
-# ── Streamlit ──────────────────────────────────────────────────────────────
-streamlit>=1.35.0
+PyMuPDF
+pdfplumber
+Pillow
+torch
+transformers
+sentence-transformers
+accelerate
+chromadb
+langchain
+langchain-huggingface
+langchain-groq
+streamlit
 torchvision
+langchain_chroma
