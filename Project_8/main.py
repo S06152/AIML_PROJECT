@@ -444,8 +444,10 @@ class OpenSourceLLMManager:
         "or more PDF documents.\n\n"
         "Rules:\n"
         "- Answer concisely and accurately using ONLY the context.\n"
-        "- If information spans multiple PDFs, state which document each fact "
-        "comes from.\n"
+        "- Always cite sources by their DOCUMENT NAME (the filename shown in the "
+        "context header), never by index numbers like [1] or [2].\n"
+        "- Example citation style: \'According to Global Economic Prospects.pdf (Page 5)...\'\n"
+        "- If information spans multiple PDFs, mention each document name explicitly.\n"
         "- For table data, reference the relevant rows and columns explicitly.\n"
         "- For image data, reference the visual description.\n"
         "- If the context is insufficient, say: "
@@ -529,14 +531,18 @@ class RAGPipeline:
 
     @staticmethod
     def _build_context(docs: list[Document]) -> str:
-        """Serialise retrieved documents into a numbered context block."""
+        """Serialise retrieved documents into a labelled context block.
+
+        Uses Document/Page labels (not numeric indices) so the LLM cites
+        by filename rather than [1], [2] etc.
+        """
         parts: list[str] = []
-        for i, doc in enumerate(docs, 1):
+        for doc in docs:
             ctype  = doc.metadata.get("content_type", "text").upper()
             page   = doc.metadata.get("page", "?")
             source = doc.metadata.get("source", "unknown")
             parts.append(
-                f"[{i}] ({ctype} | {source} | Page {page})\n{doc.page_content}"
+                f"Document: {source} | Type: {ctype} | Page: {page}\n{doc.page_content}"
             )
         return "\n\n---\n\n".join(parts)
 
@@ -605,8 +611,13 @@ class RAGPipeline:
             _emit(f"   ✅ {len(image_docs)} image captions")
 
             new_docs = text_docs + table_docs + image_docs
+
+            # FIX: overwrite temp filename with the original uploaded filename
+            for doc in new_docs:
+                doc.metadata["source"] = pdf_name
+
             _emit(
-                f"📥 [{pdf_name}] Embedding {len(new_docs)} documents into ChromaDB…"
+                f"📥 [{pdf_name}] Embedding {len(new_docs)} documents into ChromaDB..."
             )
             self._vector_store_manager.add_documents(new_docs)
             self.indexed_pdfs[pdf_name] = len(new_docs)
