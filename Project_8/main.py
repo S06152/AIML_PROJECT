@@ -729,8 +729,7 @@ def _load_caption_model() -> tuple[BlipProcessor, BlipForConditionalGeneration]:
 
 class StreamlitApp:
     """
-    Streamlit UI — dark editorial theme with animated status banners,
-    colour-coded source badges, and a scrollable chat column.
+    Streamlit UI — source badges, status banners, and a chat column.
     """
 
     # Emoji badges per content type
@@ -740,68 +739,13 @@ class StreamlitApp:
         "image" : "🖼️",
     }
 
-    # Inline colour per content type (used in source pills)
-    _PILL_COLOR: dict[str, str] = {
-        "text"  : "#3b82f6",   # blue
-        "table" : "#10b981",   # emerald
-        "image" : "#f59e0b",   # amber
-    }
-
     def __init__(self) -> None:
         st.set_page_config(
             page_title = "Multimodal PDF RAG",
             page_icon  = "📚",
             layout     = "wide",
         )
-        self._inject_css()
         self._init_session_state()
-
-    # ── CSS ────────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _inject_css() -> None:
-        """Inject a dark editorial theme with custom source-pill styles."""
-        st.markdown(
-            """
-            <style>
-            @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
-
-            html, body, [class*="css"] {
-                font-family: 'IBM Plex Sans', sans-serif;
-                background-color: #0f1117;
-                color: #e2e8f0;
-            }
-
-            [data-testid="stSidebar"] {
-                background: #1a1d27;
-                border-right: 1px solid #2d3148;
-            }
-
-            .src-pill {
-                display: inline-block;
-                padding: 2px 10px;
-                border-radius: 999px;
-                font-size: 0.75rem;
-                font-family: 'IBM Plex Mono', monospace;
-                margin: 2px 4px 2px 0;
-                font-weight: 600;
-                color: #fff;
-            }
-
-            .stChatMessage {
-                border-radius: 12px;
-                margin-bottom: 8px;
-            }
-
-            h1, h2, h3 {
-                font-family: 'IBM Plex Sans', sans-serif;
-                font-weight: 600;
-                letter-spacing: -0.02em;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
 
     # ── Session state ──────────────────────────────────────────────────────
 
@@ -925,22 +869,16 @@ class StreamlitApp:
     # ── Source rendering ───────────────────────────────────────────────────
 
     def _render_sources(self, sources: list[dict]) -> None:
-        """Render colour-coded source pills inside an expander."""
+        """Render retrieved sources inside an expander."""
         if not sources:
             return
         with st.expander("📎 Retrieved sources", expanded=False):
             for s in sources:
                 ctype  = s.get("content_type", "text")
                 badge  = self._BADGE.get(ctype, "📄")
-                color  = self._PILL_COLOR.get(ctype, "#6b7280")
                 source = s.get("source", "unknown")
                 page   = s.get("page", "?")
-                st.markdown(
-                    f'<span class="src-pill" style="background:{color};">'
-                    f"{badge} {ctype.upper()}</span> "
-                    f"`{source}` · Page {page}",
-                    unsafe_allow_html=True,
-                )
+                st.text(f"{badge} {ctype.upper()} — {source} · Page {page}")
 
     # ── Chat history ───────────────────────────────────────────────────────
 
