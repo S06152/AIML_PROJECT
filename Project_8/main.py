@@ -75,7 +75,7 @@ class Config:
     #   "mixtral-8x7b-32768"
     #   "gemma2-9b-it"
     LLM_MODEL_NAME  : str   = "llama-3.3-70b-versatile"
-    LLM_MAX_TOKENS  : int   = 1024
+    LLM_MAX_TOKENS  : int   = 2048
     LLM_TEMPERATURE : float = 0.1
 
     # ── Chunking ──────────────────────────────────────────────────────────
@@ -438,20 +438,30 @@ class OpenSourceLLMManager:
     """
 
     _SYSTEM = (
-        "You are an expert document analyst. "
-        "Answer questions strictly from the provided context, which may contain "
-        "text excerpts, Markdown tables, and image captions extracted from one "
-        "or more PDF documents.\n\n"
-        "Rules:\n"
-        "- Answer concisely and accurately using ONLY the context.\n"
-        "- Always cite sources by their DOCUMENT NAME (the filename shown in the "
-        "context header), never by index numbers like [1] or [2].\n"
-        "- Example citation style: \'According to Global Economic Prospects.pdf (Page 5)...\'\n"
-        "- If information spans multiple PDFs, mention each document name explicitly.\n"
-        "- For table data, reference the relevant rows and columns explicitly.\n"
-        "- For image data, reference the visual description.\n"
-        "- If the context is insufficient, say: "
-        "'I don't have enough information to answer this question.'"
+        "You are an expert document analyst and educator. "
+        "Your goal is to provide thorough, well-structured answers that help users "
+        "deeply understand the content of their PDF documents.\n\n"
+        "Context provided may include text excerpts, Markdown tables, and image "
+        "captions extracted from one or more PDF documents.\n\n"
+        "Response guidelines:\n"
+        "1. Be DETAILED and EXPLANATORY — do not just state facts, explain what they "
+        "mean and why they matter.\n"
+        "2. STRUCTURE your response clearly using bullet points, numbered steps, or "
+        "short paragraphs as appropriate for the question type.\n"
+        "3. CITE by document name and page number inline, e.g. "
+        "'(Attention Is All You Need.pdf, Page 2)'. "
+        "Never use numeric indices like [1] or [2].\n"
+        "4. For TECHNICAL topics: define key terms, explain the mechanism, and give "
+        "context so a non-expert can follow.\n"
+        "5. For TABLE data: describe what the table shows, highlight key figures, "
+        "and interpret trends.\n"
+        "6. For IMAGE captions: describe what is visually depicted and its relevance.\n"
+        "7. If multiple documents cover the topic, synthesise the information and "
+        "note any differences between sources.\n"
+        "8. If the context is insufficient, say exactly: "
+        "'I don't have enough information in the provided documents to answer this.' "
+        "Do not hallucinate or use outside knowledge.\n"
+        "9. End complex answers with a concise 1-2 sentence summary."
     )
 
     _HUMAN = "Context:\n{context}\n\nQuestion: {question}"
@@ -584,8 +594,11 @@ class RAGPipeline:
 
         tmp_path: str | None = None
         try:
+            # Embed the original filename in the temp suffix so
+            # Path(tmp_path).name ends with the real PDF name.
+            suffix = "_" + pdf_name
             with tempfile.NamedTemporaryFile(
-                delete=False, suffix=".pdf"
+                delete=False, suffix=suffix
             ) as tmp:
                 tmp.write(uploaded_file.read())
                 tmp_path = tmp.name
@@ -879,18 +892,6 @@ class StreamlitApp:
 
     # ── Source rendering ───────────────────────────────────────────────────
 
-    def _render_sources(self, sources: list[dict]) -> None:
-        """Render retrieved sources inside an expander."""
-        if not sources:
-            return
-        with st.expander("📎 Retrieved sources", expanded=False):
-            for s in sources:
-                ctype  = s.get("content_type", "text")
-                badge  = self._BADGE.get(ctype, "📄")
-                source = s.get("source", "unknown")
-                page   = s.get("page", "?")
-                st.text(f"{badge} {ctype.upper()} — {source} · Page {page}")
-
     # ── Chat history ───────────────────────────────────────────────────────
 
     def _render_chat_history(self) -> None:
@@ -899,7 +900,6 @@ class StreamlitApp:
                 st.write(turn["question"])
             with st.chat_message("assistant"):
                 st.write(turn["answer"])
-                self._render_sources(turn.get("sources", []))
 
     # ── Query ──────────────────────────────────────────────────────────────
 
@@ -917,13 +917,11 @@ class StreamlitApp:
                 result = pipeline.query(question)
 
             answer_placeholder.write(result["answer"])
-            self._render_sources(result["sources"])
 
         st.session_state.chat_history.append(
             {
                 "question": question,
                 "answer"  : result["answer"],
-                "sources" : result["sources"],
             }
         )
 
