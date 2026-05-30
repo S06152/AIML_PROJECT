@@ -144,12 +144,12 @@ class StreamlitApp:
                         documents = loader.load_documents()
                         all_documents.extend(documents)
                         logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
-                        st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(documents)))
 
                     except Exception as e:
                         logging.error(f"Failed to load {file.name}: {e}")
                         st.error(f"❌ Failed to load {file.name}")
                         continue
+                st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(all_documents)))
                 
                 # Step 2: Chunk documents
                 #chunker = ChunkingStrategy(documents = documents, chunk_size = user_controls["CHUNK_SIZE"], chunk_overlap = user_controls["CHUNK_OVERLAP"])
