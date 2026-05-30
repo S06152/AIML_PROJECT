@@ -2,18 +2,18 @@
 import io
 import os
 import sys
+import fitz 
+import torch
+import uuid
 import tempfile
+import pdfplumber
+from PIL import Image
+from pathlib import Path
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 from typing import List
 from langchain_core.documents import Document
-import fitz 
-import pdfplumber
-from PIL import Image
-import torch
 from transformers import BlipProcessor, BlipForConditionalGeneration
-from pathlib import Path
-import uuid
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 class PDFLoader:

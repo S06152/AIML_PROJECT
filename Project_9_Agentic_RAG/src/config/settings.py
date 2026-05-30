@@ -80,20 +80,6 @@ class Config:
             logging.exception("Error fetching GROQ_MODEL_OPTIONS.")
             raise CustomException(e, sys)
 
-    def get_vector_db_options(self) -> List[str]:
-        """
-        Returns available vector database options as a list.
-        """
-        try:
-            options = self.config["DEFAULT"].get("VECTOR_DB_OPTIONS")
-            parsed = [option.strip() for option in options.split(",") if option.strip()]
-            logging.debug(f"VECTOR_DB_OPTIONS fetched: {parsed}")
-            return parsed
-        
-        except Exception as e:
-            logging.exception("Error fetching VECTOR_DB_OPTIONS.")
-            raise CustomException(e, sys)
-
     def get_temperature(self) -> List[float]:
         """
         Returns list of temperature values for LLM configuration.
@@ -190,17 +176,4 @@ class Config:
 
         except Exception as e:
             logging.exception("Error fetching CAPTION_MODEL.")
-            raise CustomException(e, sys)
-    
-    def get_collection(self) -> str:
-        """
-        Returns the embedding model name used for vectorization.
-        """
-        try:
-            value = self.config["DEFAULT"].get("COLLECTION")
-            logging.debug(f"COLLECTION fetched: {value}")
-            return value
-
-        except Exception as e:
-            logging.exception("Error fetching COLLECTION.")
             raise CustomException(e, sys)

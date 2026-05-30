@@ -31,6 +31,7 @@ class MultiModalRAG:
             logging.info("Initializing MultiModalRAG orchestrator.")
             self._app = StreamlitApp()
             self._user_input = self._app.load_streamlit_ui()
+            self._user_query = st.chat_input("💬 Enter your question here...")
             
             logging.info("Orchestrator initialized. User controls loaded successfully.")
 
@@ -59,8 +60,9 @@ class MultiModalRAG:
             # Phase 1: PDF Upload + RAG Ingestion
             # ---------------------------------------------------------------
             uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = False, help = "Select one or more PDFs.")
-
-            if uploaded_files:
+            index_clicked = st.sidebar.button("⚡ Index PDF(s)", disabled = (not uploaded_files), use_container_width = True, type = "primary")
+            
+            if uploaded_files and index_clicked:
                 self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
 
             else:
@@ -72,9 +74,8 @@ class MultiModalRAG:
             # ---------------------------------------------------------------
             # Phase 2: User Query + RAG Response
             # ---------------------------------------------------------------
-            user_query = st.chat_input("💬 Enter your question here...")
-            if user_query:
-                self._run_agent_workflow(user_query.strip())
+            if self._user_query:
+                self._run_agent_workflow(self._user_query.strip())
 
         except Exception as e:
             logging.exception("Error during RAG pipeline execution.")
@@ -90,30 +91,40 @@ class MultiModalRAG:
         Raises:
             CustomException: If context retrieval or response generation fails.
         """
-        try:
-            logging.info("Starting RAG workflow for user query: '%s'", user_query)
 
-            # Step 1: Retrieve relevant context from indexed documents
-            with st.spinner("🔍 Retrieving relevant context from documents..."):
-                response: str = self._app.retrieve_context(user_query, self._user_input)
+        # Chat Interface
+        if "messages" not in st.session_state:
+            st.session_state["messages"] = []
 
-            # Display in chat format
-            with st.chat_message("user"):
-                st.markdown(user_query)
+        # Display chat history
+        for message in st.session_state["messages"]:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-            with st.chat_message("assistant"):
-                st.markdown(response)
+        st.session_state["messages"].append({"role": "user", "content": user_query})
 
-            # Persist chat history
-            if "chat_history" not in st.session_state:
-                st.session_state["chat_history"] = []
-            st.session_state["chat_history"].append((user_query, response))
+        # Display the user message immediately before generating response
+        with st.chat_message("user"):
+            st.markdown(user_query)
 
-            logging.info("Response generated and displayed successfully.")
+        # Initialize response before the block to avoid UnboundLocalError
+        response = None
 
-            logging.info("RAG workflow completed successfully.")
+        with st.chat_message("assistant"):
+            with st.spinner("🔍 Searching & generating answer..."):
+                try:
+                    logging.info("Starting RAG workflow for user query: '%s'", user_query)
 
-        except Exception as e:
-            logging.exception("RAG workflow failed for query: '%s'", user_query)
-            raise CustomException(e,sys)
+                    # Step 1: Retrieve relevant context from indexed documents
+                    response: str = self._app.retrieve_context(user_query, self._user_input)
+                    st.markdown(response)
+                    
+                    logging.info("Response generated successfully.")
+
+                except Exception as e:
+                    logging.exception("RAG workflow failed for query: '%s'", user_query)
+                    raise CustomException(e,sys)
+                
+        if response is not None:
+            st.session_state["messages"].append({"role": "assistant", "content": response})
                 

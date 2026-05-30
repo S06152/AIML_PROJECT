@@ -100,7 +100,6 @@ class StreamlitApp:
             self._user_control["TOP_K"] = self._config.get_top_k()
             self._user_control["EMBEDDING_MODELS"] = self._config.get_embedding_model()
             self._user_control["CAPTION_MODEL"] = self._config.get_caption_model()
-            self._user_control["COLLECTION"] = self._config.get_collection()
 
             logging.info("Streamlit UI rendered successfully.")
             return self._user_control
@@ -132,50 +131,55 @@ class StreamlitApp:
             CustomException: If any step in the pipeline fails.
         """
         try:
-            logging.info("Starting RAG ingestion pipeline.")
+            with st.spinner("🔎 Processing PDFs document...."):
+                logging.info("Starting RAG ingestion pipeline.")
 
-            # Step 1: Load PDFs
-            loader = PDFLoader(uploaded_file, user_controls)
-            documents = loader.load_documents()
-            logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
+                # Step 1: Load PDFs
+                loader = PDFLoader(uploaded_file, user_controls)
+                documents = loader.load_documents()
+                logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
+                st.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(documents)))
+                
+                # Step 2: Chunk documents
+                #chunker = ChunkingStrategy(documents = documents, chunk_size = user_controls["CHUNK_SIZE"], chunk_overlap = user_controls["CHUNK_OVERLAP"])
+                #chunks = chunker.split_documents()
+                #logging.info("Chunking complete: %d chunks created.", len(chunks))
+                #st.write(f"✅ Created {len(chunks)} chunk(s).")
+                
+                # Step 3: Generate embeddings
+                embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
+                embeddings = embedding_mgr.create_embeddings()
+                logging.info("✅ Embeddings ready.")
+                st.write("✅ Embeddings Done.")
 
-            # Step 2: Chunk documents
-            #chunker = ChunkingStrategy(documents = documents, chunk_size = user_controls["CHUNK_SIZE"], chunk_overlap = user_controls["CHUNK_OVERLAP"])
-            #chunks = chunker.split_documents()
-            #logging.info("Chunking complete: %d chunks created.", len(chunks))
-            #st.write(f"✅ Created {len(chunks)} chunk(s).")
-            
-            # Step 3: Generate embeddings
-            embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
-            embeddings = embedding_mgr.create_embeddings()
-            logging.info("✅ Embeddings ready.")
+                # Step 4: Build ChromaDB index
+                #vector_store_mgr = ChromaVectorStore(chunks, embeddings)
+                vector_store_mgr = ChromaVectorStore(documents, embeddings)
+                vector_db = vector_store_mgr.create_vectorstore()
+                logging.info("✅ ChromaDB index built.")
+                st.write("✅ ChromaDB vector store created successfully")
 
-            # Step 4: Build ChromaDB index
-            #vector_store_mgr = ChromaVectorStore(chunks, embeddings)
-            vector_store_mgr = ChromaVectorStore(documents, embeddings)
-            vector_db = vector_store_mgr.create_vectorstore()
-            logging.info("✅ ChromaDB index built.")
+                # Step 5: Configure retriever
+                retriever_mgr = Retriever(vector_db, top_k = user_controls["TOP_K"])
+                vector_retriever = retriever_mgr.get_retriever()
+                st.write("✅ vector_retriever created successfully")
 
-            # Step 5: Configure retriever
-            retriever_mgr = Retriever(vector_db, top_k = user_controls["TOP_K"])
-            vector_retriever = retriever_mgr.get_retriever()
+                # Store in session state for reuse across interactions
+                st.session_state["vector_retriever"] = vector_retriever
 
-            # Store in session state for reuse across interactions
-            st.session_state["vector_retriever"] = vector_retriever
+                # Step 6: Build and cache QAChain
+                qa_chain = QAChain(
+                        retriever = vector_retriever,
+                        groq_api_key = user_controls["GROQ_API_KEY"],
+                        model_name = user_controls["LLM_MODEL"],
+                        temperature = user_controls["TEMPERATURE"],
+                        max_tokens = user_controls["TOKEN"],
+                    )
+                st.session_state["qa_chain"] = qa_chain
 
-            # Step 6: Build and cache QAChain
-            qa_chain = QAChain(
-                    retriever = vector_retriever,
-                    groq_api_key = user_controls["GROQ_API_KEY"],
-                    model_name = user_controls["LLM_MODEL"],
-                    temperature = user_controls["TEMPERATURE"],
-                    max_tokens = user_controls["TOKEN"],
-                )
-            st.session_state["qa_chain"] = qa_chain
+                logging.info("QAChain built and cached in session state.")
 
-            logging.info("QAChain built and cached in session state.")
-
-            logging.info("RAG ingestion pipeline completed successfully.")
+                logging.info("RAG ingestion pipeline completed successfully.")
 
         except Exception as e:
             logging.exception("Ingestion pipeline failed.")
