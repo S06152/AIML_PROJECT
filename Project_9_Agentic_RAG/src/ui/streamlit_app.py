@@ -138,7 +138,7 @@ class StreamlitApp:
                 loader = PDFLoader(uploaded_file, user_controls)
                 documents = loader.load_documents()
                 logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
-                st.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(documents)))
+                st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(documents)))
                 
                 # Step 2: Chunk documents
                 #chunker = ChunkingStrategy(documents = documents, chunk_size = user_controls["CHUNK_SIZE"], chunk_overlap = user_controls["CHUNK_OVERLAP"])
@@ -150,19 +150,19 @@ class StreamlitApp:
                 embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
                 embeddings = embedding_mgr.create_embeddings()
                 logging.info("✅ Embeddings ready.")
-                st.write("✅ Embeddings Done.")
+                st.sidebar.write("✅ Embeddings Done.")
 
                 # Step 4: Build ChromaDB index
                 #vector_store_mgr = ChromaVectorStore(chunks, embeddings)
                 vector_store_mgr = ChromaVectorStore(documents, embeddings)
                 vector_db = vector_store_mgr.create_vectorstore()
                 logging.info("✅ ChromaDB index built.")
-                st.write("✅ ChromaDB vector store created successfully")
+                st.sidebar.write("✅ ChromaDB vector store created successfully")
 
                 # Step 5: Configure retriever
                 retriever_mgr = Retriever(vector_db, top_k = user_controls["TOP_K"])
                 vector_retriever = retriever_mgr.get_retriever()
-                st.write("✅ vector_retriever created successfully")
+                st.sidebar.write("✅ vector_retriever created successfully")
 
                 # Store in session state for reuse across interactions
                 st.session_state["vector_retriever"] = vector_retriever
@@ -176,7 +176,7 @@ class StreamlitApp:
                         max_tokens = user_controls["TOKEN"],
                     )
                 st.session_state["qa_chain"] = qa_chain
-
+                st.sidebar.write("✅ LLM chain created successfully")
                 logging.info("QAChain built and cached in session state.")
 
                 logging.info("RAG ingestion pipeline completed successfully.")
