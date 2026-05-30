@@ -135,10 +135,8 @@ class StreamlitApp:
             logging.info("Starting RAG ingestion pipeline.")
 
             # Step 1: Load PDFs
-            loaders = [PDFLoader(file, user_controls) for file in uploaded_file]
-            documents = []
-            for loader in loaders:
-                documents.extend(loader.load_documents())
+            loader = PDFLoader(uploaded_file, user_controls) 
+            documents = loader.load_documents()
             logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
 
             # Step 2: Chunk documents

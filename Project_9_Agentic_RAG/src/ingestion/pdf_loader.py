@@ -33,7 +33,7 @@ class PDFLoader:
         documents = loader.load_documents()
     """
 
-    def __init__(self, uploaded_files, user_input: dict) -> None:
+    def __init__(self, uploaded_file, user_input: dict) -> None:
         """
         Initialize PDFLoader with a Streamlit uploaded file.
 
@@ -43,17 +43,12 @@ class PDFLoader:
         Raises:
             Raises Exception: If file type is not PDF.
         """
-        self._uploaded_files = []
-
         try:
             logging.info("Initializing PDFLoader.")
             
-            for uploaded_file in uploaded_files:
-                if uploaded_file.type == "application/pdf":
-                    self._uploaded_files.append(uploaded_file)
-                    logging.info("PDF file accepted")
-                else:
-                    logging.warning("Non-PDF file skipped")
+            if uploaded_file.type == "application/pdf":
+                self._uploaded_file = uploaded_file
+                logging.info("PDF file accepted")
 
             self._processor = BlipProcessor.from_pretrained(user_input['CAPTION_MODEL'])
             self._model = BlipForConditionalGeneration.from_pretrained(user_input['CAPTION_MODEL'])

@@ -58,7 +58,7 @@ class MultiModalRAG:
             # ---------------------------------------------------------------
             # Phase 1: PDF Upload + RAG Ingestion
             # ---------------------------------------------------------------
-            uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = True, help = "Select one or more PDFs.")
+            uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = False, help = "Select one or more PDFs.")
 
             if uploaded_files:
                 self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
