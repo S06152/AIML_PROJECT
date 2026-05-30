@@ -87,7 +87,11 @@ class QAChain:
 
     def format_docs(self, docs: List[Document]) -> str:
         """
-        Convert retrieved Document objects into a single formatted string.
+        Convert retrieved Document objects into a single formatted string
+        with source metadata headers so the LLM can produce accurate citations.
+
+        Each chunk is prefixed with:
+            [Source: <filename>, Page: <page>, Type: <content_type>]
 
         This formatted string becomes the {context}
         injected into the RAG prompt template.
@@ -95,8 +99,17 @@ class QAChain:
         try:
             logging.debug(f"Formatting {len(docs)} retrieved documents.")
 
-            # Combine document contents separated by double newline
-            return "\n\n".join(doc.page_content for doc in docs)
+            formatted_chunks = []
+            for doc in docs:
+                meta = doc.metadata
+                source       = meta.get("source", "Unknown Document")
+                page         = meta.get("page", "?")
+                content_type = meta.get("content_type", "text")
+
+                header = f"[Source: {source}, Page: {page}, Type: {content_type}]"
+                formatted_chunks.append(f"{header}\n{doc.page_content}")
+
+            return "\n\n---\n\n".join(formatted_chunks)
 
         except Exception as e:
             logging.exception("Error while formatting documents.")
