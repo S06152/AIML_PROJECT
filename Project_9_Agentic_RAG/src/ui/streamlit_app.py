@@ -134,11 +134,22 @@ class StreamlitApp:
             with st.sidebar.spinner("🔎 Processing PDFs document...."):
                 logging.info("Starting RAG ingestion pipeline.")
 
+                all_documents = []
+
                 # Step 1: Load PDFs
-                loader = PDFLoader(uploaded_file, user_controls)
-                documents = loader.load_documents()
-                logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
-                st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(documents)))
+                for file in uploaded_file:
+                    try:
+                        file.seek(0)
+                        loader = PDFLoader(file, user_controls)
+                        documents = loader.load_documents()
+                        all_documents.extend(documents)
+                        logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
+                        st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(documents)))
+
+                    except Exception as e:
+                        logging.error(f"Failed to load {file.name}: {e}")
+                        st.error(f"❌ Failed to load {file.name}")
+                        continue
                 
                 # Step 2: Chunk documents
                 #chunker = ChunkingStrategy(documents = documents, chunk_size = user_controls["CHUNK_SIZE"], chunk_overlap = user_controls["CHUNK_OVERLAP"])

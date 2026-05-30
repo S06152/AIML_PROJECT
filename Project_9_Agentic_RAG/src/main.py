@@ -38,7 +38,40 @@ class MultiModalRAG:
         except Exception as e:
             logging.exception("Failed to initialize MultiModalRAG orchestrator.")
             raise CustomException(e, sys)
+
+    def _get_files_signature(self, uploaded_files):
+        """
+        Generate unique signature for uploaded files.
+        Used to detect file changes for auto re-indexing.
+        """
+        if not uploaded_files:
+            return None
         
+        return tuple(sorted((f.name, f.size) for f in uploaded_files))
+    
+    def _needs_reindexing(self, uploaded_files, selected_vector_db):
+        """
+        Check whether documents or vector DB selection changed.
+        """
+        current_sig = self._get_files_signature(uploaded_files)
+
+        if current_sig is None:
+            return False
+
+        prev_sig = st.session_state.get("_files_signature")
+        prev_db = st.session_state.get("_selected_vector_db")
+
+        needs_update = (
+            "vector_store" not in st.session_state
+            or current_sig != prev_sig
+            or selected_vector_db != prev_db
+        )
+
+        if needs_update:
+            logging.info("Reindexing triggered due to file or DB change.")
+
+        return needs_update
+      
     def run(self) -> None:
         """
         Execute the full Multi-Modal RAG application flow.
@@ -59,11 +92,12 @@ class MultiModalRAG:
             # ---------------------------------------------------------------
             # Phase 1: PDF Upload + RAG Ingestion
             # ---------------------------------------------------------------
-            uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = False, help = "Select one or more PDFs.")
+            uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = True, help = "Select one or more PDFs.")
             index_clicked = st.sidebar.button("⚡ Index PDF(s)", disabled = (not uploaded_files), use_container_width = True, type = "primary")
             
             if uploaded_files and index_clicked:
-                self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
+                if self._needs_reindexing(uploaded_files):
+                    self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
 
             # ---------------------------------------------------------------
             # Phase 2: User Query + RAG Response
