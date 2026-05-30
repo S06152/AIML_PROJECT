@@ -49,9 +49,9 @@ class MultiModalRAG:
         
         return tuple(sorted((f.name, f.size) for f in uploaded_files))
     
-    def _needs_reindexing(self, uploaded_files, selected_vector_db):
+    def _needs_reindexing(self, uploaded_files):
         """
-        Check whether documents or vector DB selection changed.
+        Check whether documents changed.
         """
         current_sig = self._get_files_signature(uploaded_files)
 
@@ -59,13 +59,8 @@ class MultiModalRAG:
             return False
 
         prev_sig = st.session_state.get("_files_signature")
-        prev_db = st.session_state.get("_selected_vector_db")
 
-        needs_update = (
-            "vector_store" not in st.session_state
-            or current_sig != prev_sig
-            or selected_vector_db != prev_db
-        )
+        needs_update = (current_sig != prev_sig)
 
         if needs_update:
             logging.info("Reindexing triggered due to file or DB change.")
