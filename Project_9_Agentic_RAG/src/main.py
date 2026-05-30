@@ -65,12 +65,6 @@ class MultiModalRAG:
             if uploaded_files and index_clicked:
                 self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
 
-            else:
-                st.warning(
-                    "⚠️ No documents uploaded. "
-                    "Please upload PDF(s) from the sidebar to enable context-aware responses."
-                )
-
             # ---------------------------------------------------------------
             # Phase 2: User Query + RAG Response
             # ---------------------------------------------------------------

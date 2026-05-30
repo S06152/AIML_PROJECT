@@ -131,7 +131,7 @@ class StreamlitApp:
             CustomException: If any step in the pipeline fails.
         """
         try:
-            with st.spinner("🔎 Processing PDFs document...."):
+            with st.sidebar.spinner("🔎 Processing PDFs document...."):
                 logging.info("Starting RAG ingestion pipeline.")
 
                 # Step 1: Load PDFs
