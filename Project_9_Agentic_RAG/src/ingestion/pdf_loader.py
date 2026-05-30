@@ -229,19 +229,16 @@ class PDFLoader:
         str
             Human-readable caption string.
         """
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        self._model.to(device)
-
-        inputs = self._processor(
+        inputs = self.caption_processor(
             images=pil_image, return_tensors="pt"
-        ).to(device)
+        ).to(self.device)
 
         with torch.no_grad():
-            output_ids = self._model.generate(
+            output_ids = self.caption_model.generate(
                 **inputs, max_new_tokens=128
             )
 
-        return self._processor.decode(
+        return self.caption_processor.decode(
             output_ids[0], skip_special_tokens=True
         )
 

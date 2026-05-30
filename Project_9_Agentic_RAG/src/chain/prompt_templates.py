@@ -77,10 +77,10 @@ IMAGES / FIGURES (Type: image):
   - Cite with the correct page.
 
 MATH / FORMULAS:
-  - Present equations in a dedicated block, e.g.:
-      > MultiHead(Q, K, V) = Concat(head₁, ..., headₕ) · Wᴼ
-  - Explain each symbol clearly.
-  - Cite the source chunk.
+  - If a formula or equation is present in the context, present it in a dedicated Markdown/LaTeX block (use $$...$$ for display math), explain each symbol clearly, and cite the source chunk.
+  - If the formula is NOT present in the context but is a standard/public formula (e.g., Scaled Dot-Product Attention, softmax, etc.), present it in a Markdown/LaTeX block, explain each symbol, and add the note:
+      "This is a standard formula and is not explicitly stated in the provided documents."
+  - Always follow this for all PDF content types: text, tables, images, and figures.
 
 ═══════════════════════════════════════
 MULTI-DOCUMENT REASONING
@@ -110,7 +110,10 @@ Instructions:
 - Each chunk in the context starts with [Source: <filename>, Page: <page>].
   Use these EXACTLY when writing citations: (filename, Page X).
 - Do NOT use section numbers like (3.2.3) as citations.
-- For math/formulas, present them in a quoted block and explain each symbol.
+- For math/formulas:
+    - If present in the context, present them in a Markdown/LaTeX block ($$...$$), explain each symbol, and cite the source.
+    - If NOT present but the formula is standard/public, present it in a Markdown/LaTeX block, explain each symbol, and add:
+        "This is a standard formula and is not explicitly stated in the provided documents."
 - For tables, explain the data and highlight trends.
 - For image captions, describe what is shown and its relevance.
 - If the context lacks sufficient information, say so explicitly.

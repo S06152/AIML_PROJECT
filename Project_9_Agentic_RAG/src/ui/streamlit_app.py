@@ -135,7 +135,7 @@ class StreamlitApp:
             logging.info("Starting RAG ingestion pipeline.")
 
             # Step 1: Load PDFs
-            loader = PDFLoader(uploaded_file, user_controls) 
+            loader = PDFLoader(uploaded_file, user_controls)
             documents = loader.load_documents()
             logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
 
