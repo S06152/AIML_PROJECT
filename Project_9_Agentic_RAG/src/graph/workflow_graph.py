@@ -19,7 +19,7 @@ class GraphBuilder:
     4. arxiv_search          — scientific research papers, academic findings
     """
 
-    def __init__(self, user_contols_input: dict) -> None:
+    def __init__(self) -> None:
         """
         Initialize LLM and all agents.
 
