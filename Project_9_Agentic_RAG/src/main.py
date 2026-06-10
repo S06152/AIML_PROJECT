@@ -3,6 +3,7 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 import streamlit as st
 from src.ui.streamlit_app import StreamlitApp
+from src.graph.workflow_graph import GraphBuilder
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -31,6 +32,8 @@ class MultiModalRAG:
             logging.info("Initializing MultiModalRAG orchestrator.")
             self._app = StreamlitApp()
             self._user_input = self._app.load_streamlit_ui()
+            self._graph = GraphBuilder()
+
             self._user_query = st.chat_input("💬 Enter your question here...")
             
             logging.info("Orchestrator initialized. User controls loaded successfully.")
@@ -84,27 +87,35 @@ class MultiModalRAG:
         """
 
         try:
-            # ---------------------------------------------------------------
+            # Chat History
+            if "messages" not in st.session_state:
+                st.session_state["messages"] = []
+
+            for message in st.session_state["messages"]:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+         
             # Phase 1: PDF Upload + RAG Ingestion
-            # ---------------------------------------------------------------
             uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = True, help = "Select one or more PDFs.")
             index_clicked = st.sidebar.button("⚡ Index PDF(s)", disabled = (not uploaded_files), use_container_width = True, type = "primary")
             
             if uploaded_files and index_clicked:
                 if self._needs_reindexing(uploaded_files):
                     self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
+                    st.session_state["_files_signature"] = (self._get_files_signature(uploaded_files))
 
             # ---------------------------------------------------------------
             # Phase 2: User Query + RAG Response
             # ---------------------------------------------------------------
+            graph = self._graph.build_graph()
             if self._user_query:
-                self._run_agent_workflow(self._user_query.strip())
+                self._run_agent_workflow(self._user_query.strip(), graph)
 
         except Exception as e:
             logging.exception("Error during RAG pipeline execution.")
             raise CustomException(e, sys)
 
-    def _run_agent_workflow(self, user_query: str) -> None:
+    def _run_agent_workflow(self, user_query: str, graph) -> None:
         """
         Retrieve relevant context and generate a response for the user query.
 
@@ -114,15 +125,6 @@ class MultiModalRAG:
         Raises:
             CustomException: If context retrieval or response generation fails.
         """
-
-        # Chat Interface
-        if "messages" not in st.session_state:
-            st.session_state["messages"] = []
-
-        # Display chat history
-        for message in st.session_state["messages"]:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
 
         st.session_state["messages"].append({"role": "user", "content": user_query})
 
@@ -139,7 +141,10 @@ class MultiModalRAG:
                     logging.info("Starting RAG workflow for user query: '%s'", user_query)
 
                     # Step 1: Retrieve relevant context from indexed documents
-                    response: str = self._app.retrieve_context(user_query, self._user_input)
+                    # compile graph
+                    #graph = self._graph.build_graph()
+                    #response: str = self._app.retrieve_context(user_query, self._user_input)
+                    response: str = self._graph.execute(graph, user_query)
                     st.markdown(response)
                     
                     logging.info("Response generated successfully.")

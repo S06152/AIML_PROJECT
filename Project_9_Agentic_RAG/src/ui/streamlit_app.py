@@ -1,6 +1,5 @@
 # Standard Library Imports
 import sys
-import os
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 import streamlit as st
@@ -9,7 +8,8 @@ from src.config.settings import Config
 from src.ingestion.pdf_loader import PDFLoader
 from src.embedding.embedding import EmbeddingManager
 from src.vectorstore.chroma_store import ChromaVectorStore
-from src.retrieval.retriever import Retriever
+#from src.retrieval.retriever import Retriever
+from src.tools.retriever_tool import RetrieverTool
 from src.chain.qa_chain import QAChain
 import warnings
 warnings.filterwarnings("ignore")
@@ -165,13 +165,13 @@ class StreamlitApp:
 
                 # Step 4: Build ChromaDB index
                 #vector_store_mgr = ChromaVectorStore(chunks, embeddings)
-                vector_store_mgr = ChromaVectorStore(documents, embeddings)
+                vector_store_mgr = ChromaVectorStore(all_documents, embeddings)
                 vector_db = vector_store_mgr.create_vectorstore()
                 logging.info("✅ ChromaDB index built.")
                 st.sidebar.write("✅ ChromaDB vector store created successfully")
 
                 # Step 5: Configure retriever
-                retriever_mgr = Retriever(vector_db, top_k = user_controls["TOP_K"])
+                retriever_mgr = RetrieverTool(vector_db, top_k = user_controls["TOP_K"])
                 vector_retriever = retriever_mgr.get_retriever()
                 st.sidebar.write("✅ vector_retriever created successfully")
 
