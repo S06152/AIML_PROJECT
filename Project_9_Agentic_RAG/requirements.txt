@@ -37,3 +37,4 @@ pydantic
 wikipedia
 arxiv
 bs4
+grandalf

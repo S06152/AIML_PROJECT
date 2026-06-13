@@ -109,12 +109,42 @@ class MultiModalRAG:
             # Phase 2: User Query + RAG Response
             # ---------------------------------------------------------------
             graph = self._graph.build_graph()
+
+            # Display the Agentic Workflow Graph in sidebar
+            self._display_graph(graph)
+
             if self._user_query:
                 self._run_agent_workflow(self._user_query.strip(), graph)
 
         except Exception as e:
             logging.exception("Error during RAG pipeline execution.")
             raise CustomException(e, sys)
+
+    def _display_graph(self, graph) -> None:
+        """
+        Display the Agentic RAG workflow graph in the Streamlit sidebar.
+
+        Uses LangGraph's built-in Mermaid diagram rendering to produce
+        a PNG image of the compiled state graph.
+
+        Args:
+            graph: Compiled LangGraph StateGraph instance.
+        """
+        try:
+            with st.sidebar:
+                st.subheader("🔀 Agent Workflow Graph")
+                
+                # Method 1: Try to render as PNG image (requires grandalf package)
+                try:
+                    graph_image = graph.get_graph().draw_mermaid_png()
+                    st.image(graph_image, caption="Agentic RAG Workflow", use_container_width=True)
+                except Exception:
+                    # Method 2: Fallback to Mermaid text diagram
+                    mermaid_text = graph.get_graph().draw_mermaid()
+                    st.code(mermaid_text, language="mermaid")
+
+        except Exception as e:
+            logging.warning(f"Could not display workflow graph: {e}")
 
     def _run_agent_workflow(self, user_query: str, graph) -> None:
         """
