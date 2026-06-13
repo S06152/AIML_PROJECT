@@ -7,21 +7,18 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage
 from src.tools.tool_registry import ToolRegistry
 
-# System message to guide the LLM on proper tool usage
-TOOL_USE_SYSTEM_PROMPT = """You are a helpful AI assistant with access to specialized tools.
+# Simplified system prompt — avoids listing tool names to prevent format confusion in Llama models.
+# Tools are already described to the model via bind_tools(); repeating names here causes XML-style calls.
+TOOL_USE_SYSTEM_PROMPT = """You are a helpful AI assistant with access to tools.
 
-When you need to use a tool, you MUST use the proper JSON tool calling format provided by the system.
-DO NOT use XML-style function calls like <function=name{...}</function>.
-Simply decide which tool to use and provide the required arguments.
+IMPORTANT ROUTING RULES — follow them strictly:
+1. If the user's question is about content from their uploaded documents, use the document retriever tool.
+2. If the user asks about current events or real-time information, use the web search tool.
+3. If the user asks about well-known encyclopaedic facts, use the Wikipedia tool.
+4. If the user asks about academic research or scientific papers, use the arXiv tool.
+5. If you can confidently answer without any tool, respond directly.
 
-Available tools:
-- vector_db_retriever: Search uploaded PDF documents for domain-specific information
-- tavily_web_search: Search the web for current events or real-time information
-- wikipedia_search: Search Wikipedia for encyclopaedic facts and general knowledge
-- arxiv_search: Search arXiv for academic research papers and scientific publications
-
-If you can answer the question directly without any tool, do so.
-If you need information from a tool, call exactly ONE tool at a time."""
+Always prefer the document retriever when the user has uploaded documents and asks about their content."""
 
 
 class Agent:
@@ -60,8 +57,13 @@ class Agent:
                 temperature=temperature,
                 max_tokens=max_tokens
             )
+            # tool_choice="auto" ensures proper native tool calling via the API
             # parallel_tool_calls=False prevents format confusion in Llama models
-            self._llm_with_tools = llm.bind_tools(self._tools, parallel_tool_calls=False)
+            self._llm_with_tools = llm.bind_tools(
+                self._tools,
+                parallel_tool_calls=False,
+                tool_choice="auto"
+            )
             self._last_config = current_config
 
         return self._llm_with_tools
@@ -83,10 +85,15 @@ class Agent:
         try:
             llm_with_tools = self._get_llm_with_tools()
 
+            # Build system prompt with context about uploaded documents
+            system_content = TOOL_USE_SYSTEM_PROMPT
+            if st.session_state.get("vector_retriever") is not None:
+                system_content += "\n\nNote: The user has uploaded and indexed documents. Prefer searching the uploaded documents first for their questions."
+
             # Prepend system message to guide proper tool calling format
             messages = state["messages"]
             if not messages or not isinstance(messages[0], SystemMessage):
-                messages = [SystemMessage(content=TOOL_USE_SYSTEM_PROMPT)] + list(messages)
+                messages = [SystemMessage(content=system_content)] + list(messages)
 
             logging.info("tool_calling_llm: invoking LLM with bound tools.")
             response = llm_with_tools.invoke(messages)
@@ -94,5 +101,18 @@ class Agent:
             return {"messages": [response]}
 
         except Exception as e:
+            # Handle Groq tool_use_failed error (XML-style generation issue)
+            error_str = str(e)
+            if "tool_use_failed" in error_str or "Failed to call a function" in error_str:
+                logging.warning("LLM generated invalid tool call format. Retrying without system message...")
+                try:
+                    # Retry with only the user messages (no system prompt that might confuse the model)
+                    messages = [msg for msg in state["messages"] if not isinstance(msg, SystemMessage)]
+                    response = llm_with_tools.invoke(messages)
+                    return {"messages": [response]}
+                except Exception as retry_error:
+                    logging.exception("Retry also failed in tool_calling_llm node.")
+                    raise CustomException(retry_error, sys)
+
             logging.exception("Error in tool_calling_llm node.")
             raise CustomException(e, sys)
