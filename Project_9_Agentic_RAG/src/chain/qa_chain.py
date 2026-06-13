@@ -9,7 +9,6 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from src.chain.prompt_templates import get_rag_prompt
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from src.tools.tool_registry import ToolRegistry 
 
 class QAChain:
     """
@@ -77,7 +76,7 @@ class QAChain:
                 model_name = self.model_name,
                 temperature = self.temperature,
                 max_tokens = self.max_tokens
-            ).bind_tools(ToolRegistry().get_tools())
+            )
 
             logging.info("ChatGroq LLM instance created successfully.")
             return llm
