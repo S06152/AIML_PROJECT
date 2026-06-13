@@ -33,8 +33,8 @@ class GraphBuilder:
         try:
             logging.info("GRAPH BUILDER INITIALIZATION START")
 
-            self._tool_call = Agent().tool_calling_llm()
-            self._tools = ToolRegistry().get_tools()
+            self._tool_call = Agent()
+            self._tools = ToolRegistry()
             # Compiled graph cache
             self._compiled_graph: Optional[Any] = None
 
@@ -58,8 +58,8 @@ class GraphBuilder:
             graph = StateGraph(State)
 
             # Add Nodes (Agents)
-            graph.add_node("tool_calling_llm", self._tool_call)
-            graph.add_node("tools", ToolNode(self._tools))
+            graph.add_node("tool_calling_llm", self._tool_call.tool_calling_llm())
+            graph.add_node("tools", ToolNode(self._tools.get_tools()))
             
             # Define Edges
             graph.add_edge(START, "tool_calling_llm")

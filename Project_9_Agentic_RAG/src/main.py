@@ -32,6 +32,7 @@ class MultiModalRAG:
             logging.info("Initializing MultiModalRAG orchestrator.")
             self._app = StreamlitApp()
             self._user_input = self._app.load_streamlit_ui()
+            st.session_state["user_controls"] = self._user_input
             self._graph = GraphBuilder()
 
             self._user_query = st.chat_input("💬 Enter your question here...")

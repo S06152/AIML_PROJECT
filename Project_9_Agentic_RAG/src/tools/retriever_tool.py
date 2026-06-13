@@ -3,7 +3,7 @@ import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
-
+from langchain_core.tools import tool
 class RetrieverTool:
     """
     Wrapper class that converts a LangChain VectorStore
@@ -14,6 +14,7 @@ class RetrieverTool:
     - Control top-K document retrieval
     - Lazily initialize retriever (singleton pattern)
     """
+    
 
     def __init__(self, vector_store: VectorStore, top_k: int = 5):
         """

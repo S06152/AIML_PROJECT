@@ -77,7 +77,7 @@ class QAChain:
                 model_name = self.model_name,
                 temperature = self.temperature,
                 max_tokens = self.max_tokens
-            ).bind_tools(ToolRegistry().get_tools)
+            ).bind_tools(ToolRegistry().get_tools())
 
             logging.info("ChatGroq LLM instance created successfully.")
             return llm
