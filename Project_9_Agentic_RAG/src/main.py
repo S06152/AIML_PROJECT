@@ -135,25 +135,32 @@ class MultiModalRAG:
 
         # Initialize response before the block to avoid UnboundLocalError
         response = None
+        tool_name = None
 
         with st.chat_message("assistant"):
             with st.spinner("🔍 Searching & generating answer..."):
                 try:
                     logging.info("Starting RAG workflow for user query: '%s'", user_query)
 
-                    # Step 1: Retrieve relevant context from indexed documents
-                    # compile graph
-                    #graph = self._graph.build_graph()
-                    #response: str = self._app.retrieve_context(user_query, self._user_input)
-                    response: str = self._graph.execute(graph, user_query)
+                    # Step 1: Execute graph and get response + tool name
+                    response, tool_name = self._graph.execute(graph, user_query)
+
+                    # Display which tool was invoked
+                    if tool_name:
+                        st.info(f"🛠️ **Tool Called:** `{tool_name}`")
+                    else:
+                        st.info("💡 **Tool Called:** `None` (Direct LLM response)")
+
                     st.markdown(response)
                     
-                    logging.info("Response generated successfully.")
+                    logging.info("Response generated successfully. Tool used: %s", tool_name or "None")
 
                 except Exception as e:
                     logging.exception("RAG workflow failed for query: '%s'", user_query)
                     raise CustomException(e,sys)
                 
         if response is not None:
-            st.session_state["messages"].append({"role": "assistant", "content": response})
+            # Include tool name in the stored message for chat history
+            tool_label = f"🛠️ **Tool Called:** `{tool_name}`\n\n" if tool_name else "💡 **Tool Called:** `None` (Direct LLM response)\n\n"
+            st.session_state["messages"].append({"role": "assistant", "content": tool_label + response})
                 

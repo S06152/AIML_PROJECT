@@ -89,10 +89,10 @@ class GraphBuilder:
         Execute the full multi-agent pipeline.
 
         Args:
-            topic (str): User input topic
+            question (str): User input query
 
         Returns:
-            Dict[str, Any]: Final workflow state
+            tuple: (response_str, tool_name) — final answer and the tool invoked (if any)
         """
 
         try:
@@ -110,18 +110,46 @@ class GraphBuilder:
             final_state = graph.invoke(initial_state)
             messages = final_state.get("messages", [])
 
+            # Extract the tool name from the message history
+            tool_name = self._extract_tool_name(messages)
+
             # Extract the content of the last AI message as the final response
             response = ""
             if messages:
                 last_message = messages[-1]
                 response = last_message.content if hasattr(last_message, "content") else str(last_message)
 
+            logging.info(f"Tool used: {tool_name if tool_name else 'None (direct response)'}")
             logging.info("Workflow executed successfully.")
             logging.info("WORKFLOW EXECUTION END")
 
-            # Return ONLY essential outputs
-            return response
+            return response, tool_name
 
         except Exception as e:
             logging.exception("ERROR during workflow execution.")
             raise CustomException(e, sys)
+
+    def _extract_tool_name(self, messages) -> str:
+        """
+        Extract the tool name invoked during the workflow from messages.
+
+        Iterates through the message history and identifies the tool call
+        made by the LLM (from AIMessage.tool_calls or ToolMessage.name).
+
+        Args:
+            messages (list): List of messages from the workflow execution.
+
+        Returns:
+            str: Name of the tool invoked, or empty string if no tool was called.
+        """
+        tool_name = ""
+        for msg in messages:
+            # Check AIMessage for tool_calls
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                tool_name = msg.tool_calls[0].get("name", "")
+                break
+            # Fallback: check ToolMessage
+            if hasattr(msg, "name") and msg.type == "tool":
+                tool_name = msg.name
+                break
+        return tool_name
