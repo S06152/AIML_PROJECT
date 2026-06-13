@@ -9,7 +9,46 @@ from src.tools.tool_registry import ToolRegistry
 
 class Agent:
 
-    def tool_calling_llm(state: State):
+    def __init__(self):
+        """
+        Initialize Agent with cached tools.
+        Tools are created once and reused across invocations.
+        """
+        self._tools = ToolRegistry.get_tools()
+        self._llm_with_tools = None
+        self._last_config = None
+
+    def _get_llm_with_tools(self):
+        """
+        Build (or reuse) the LLM with bound tools.
+        Rebuilds only if user configuration has changed.
+        """
+        user_controls = st.session_state.get("user_controls", {})
+
+        groq_api_key = user_controls.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+        model_name   = user_controls.get("LLM_MODEL", "llama-3.3-70b-versatile")
+        temperature  = user_controls.get("TEMPERATURE", 0.2)
+        max_tokens   = user_controls.get("TOKEN", 800)
+
+        if not groq_api_key:
+            raise ValueError("GROQ_API_KEY is not set. Please configure it in Streamlit secrets.")
+
+        current_config = (groq_api_key, model_name, temperature, max_tokens)
+
+        # Rebuild LLM only if config has changed
+        if self._llm_with_tools is None or self._last_config != current_config:
+            llm = ChatGroq(
+                groq_api_key=groq_api_key,
+                model_name=model_name,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            self._llm_with_tools = llm.bind_tools(self._tools)
+            self._last_config = current_config
+
+        return self._llm_with_tools
+
+    def tool_calling_llm(self, state: State):
         """
         LangGraph node — the central decision-making node.
 
@@ -24,27 +63,7 @@ class Agent:
             - Respond directly without a tool call.
         """
         try:
-            # Retrieve user controls from session state (set by Streamlit UI)
-            user_controls = st.session_state.get("user_controls", {})
-
-            groq_api_key = user_controls.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
-            model_name   = user_controls.get("LLM_MODEL", "llama-3.3-70b-versatile")
-            temperature  = user_controls.get("TEMPERATURE", 0.2)
-            max_tokens   = user_controls.get("TOKEN", 800)
-
-            if not groq_api_key:
-                raise ValueError("GROQ_API_KEY is not set. Please configure it in Streamlit secrets.")
-
-            # Build the LLM and bind all tools so it can decide which one to call
-            llm = ChatGroq(
-                groq_api_key=groq_api_key,
-                model_name=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-
-            tools = ToolRegistry().get_tools()
-            llm_with_tools = llm.bind_tools(tools)   # ← LLM can now select any of the 4 tools
+            llm_with_tools = self._get_llm_with_tools()
 
             logging.info("tool_calling_llm: invoking LLM with bound tools.")
             response = llm_with_tools.invoke(state["messages"])

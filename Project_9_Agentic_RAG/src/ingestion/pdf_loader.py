@@ -50,8 +50,9 @@ class PDFLoader:
                 self._uploaded_file = uploaded_file
                 logging.info("PDF file accepted")
 
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
             self._processor = BlipProcessor.from_pretrained(user_input['CAPTION_MODEL'])
-            self._model = BlipForConditionalGeneration.from_pretrained(user_input['CAPTION_MODEL'])
+            self._model = BlipForConditionalGeneration.from_pretrained(user_input['CAPTION_MODEL']).to(self._device)
 
             self._text_splitter = RecursiveCharacterTextSplitter(
             chunk_size    = user_input['CHUNK_SIZE'],
@@ -229,16 +230,16 @@ class PDFLoader:
         str
             Human-readable caption string.
         """
-        inputs = self.caption_processor(
+        inputs = self._processor(
             images=pil_image, return_tensors="pt"
-        ).to(self.device)
+        ).to(self._device)
 
         with torch.no_grad():
-            output_ids = self.caption_model.generate(
+            output_ids = self._model.generate(
                 **inputs, max_new_tokens=128
             )
 
-        return self.caption_processor.decode(
+        return self._processor.decode(
             output_ids[0], skip_special_tokens=True
         )
 

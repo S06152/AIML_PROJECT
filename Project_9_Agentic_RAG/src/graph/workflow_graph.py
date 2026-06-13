@@ -7,7 +7,6 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import HumanMessage
 from src.agents.agents import Agent
-from src.tools.tool_registry import ToolRegistry 
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -34,7 +33,6 @@ class GraphBuilder:
             logging.info("GRAPH BUILDER INITIALIZATION START")
 
             self._tool_call = Agent()
-            self._tools = ToolRegistry()
             # Compiled graph cache
             self._compiled_graph: Optional[Any] = None
 
@@ -58,8 +56,8 @@ class GraphBuilder:
             graph = StateGraph(State)
 
             # Add Nodes (Agents)
-            graph.add_node("tool_calling_llm", self._tool_call.tool_calling_llm())
-            graph.add_node("tools", ToolNode(self._tools.get_tools()))
+            graph.add_node("tool_calling_llm", self._tool_call.tool_calling_llm)
+            graph.add_node("tools", ToolNode(self._tool_call._tools))
             
             # Define Edges
             graph.add_edge(START, "tool_calling_llm")
@@ -71,7 +69,7 @@ class GraphBuilder:
                 tools_condition  # routes to tools or END automatically
             )
 
-            graph.add_edge("tools", END)
+            graph.add_edge("tools", "tool_calling_llm")
         
 
             logging.info("Workflow edges defined successfully.")
@@ -110,7 +108,13 @@ class GraphBuilder:
 
             logging.info("Invoking workflow graph...")
             final_state = graph.invoke(initial_state)
-            response = final_state.get("messages", "")
+            messages = final_state.get("messages", [])
+
+            # Extract the content of the last AI message as the final response
+            response = ""
+            if messages:
+                last_message = messages[-1]
+                response = last_message.content if hasattr(last_message, "content") else str(last_message)
 
             logging.info("Workflow executed successfully.")
             logging.info("WORKFLOW EXECUTION END")
