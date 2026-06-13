@@ -47,7 +47,7 @@ class GraphBuilder:
         try:
             
             if self._compiled_graph is not None:
-                logging.info("Returning cached compiled workflow  graph.")
+                logging.info("Returning cached compiled workflow graph.")
                 return self._compiled_graph
             
             logging.info("Building workflow graph...")
@@ -56,6 +56,7 @@ class GraphBuilder:
             graph = StateGraph(State)
 
             # Add Nodes (Agents)
+            # ToolNode uses ALL tools — the LLM decides which subset is available
             graph.add_node("tool_calling_llm", self._tool_call.tool_calling_llm)
             graph.add_node("tools", ToolNode(self._tool_call._tools))
             
