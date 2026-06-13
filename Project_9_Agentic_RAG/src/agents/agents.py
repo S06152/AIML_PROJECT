@@ -12,13 +12,24 @@ from src.tools.tool_registry import ToolRegistry
 TOOL_USE_SYSTEM_PROMPT = """You are a helpful AI assistant with access to tools.
 
 IMPORTANT ROUTING RULES — follow them strictly:
-1. If the user's question is about content from their uploaded documents, use the document retriever tool.
-2. If the user asks about current events or real-time information, use the web search tool.
-3. If the user asks about well-known encyclopaedic facts, use the Wikipedia tool.
-4. If the user asks about academic research or scientific papers, use the arXiv tool.
-5. If you can confidently answer without any tool, respond directly.
+1. If the user asks about current events or real-time information, use the web search tool.
+2. If the user asks about academic research or scientific papers, use the arXiv tool.
+3. If the user asks about well-known encyclopaedic facts, historical topics, or famous people, use the Wikipedia tool.
+4. For ALL other questions, respond directly only if you are 100% certain of the answer.
 
-Always prefer the document retriever when the user has uploaded documents and asks about their content."""
+You MUST use a tool for any question you are not absolutely certain about. Never guess."""
+
+# Stronger prompt used when user has uploaded and indexed documents
+TOOL_USE_SYSTEM_PROMPT_WITH_DOCS = """You are a helpful AI assistant with access to tools.
+
+CRITICAL RULE: The user has uploaded documents. You MUST ALWAYS use the document retriever tool FIRST for ANY user question, regardless of whether you think you know the answer. The user expects answers grounded in their uploaded documents.
+
+The ONLY exceptions where you should NOT use the document retriever:
+- The user explicitly asks to "search the web" or asks about "latest news" or "current events" → use web search tool.
+- The user explicitly asks to "search Wikipedia" → use Wikipedia tool.
+- The user explicitly asks to "search arXiv" or "find research papers" → use arXiv tool.
+
+For everything else — ALWAYS use the document retriever tool. Do NOT answer from your own knowledge."""
 
 
 class Agent:
@@ -85,10 +96,11 @@ class Agent:
         try:
             llm_with_tools = self._get_llm_with_tools()
 
-            # Build system prompt with context about uploaded documents
-            system_content = TOOL_USE_SYSTEM_PROMPT
+            # Use stronger prompt when documents are uploaded to force retriever usage
             if st.session_state.get("vector_retriever") is not None:
-                system_content += "\n\nNote: The user has uploaded and indexed documents. Prefer searching the uploaded documents first for their questions."
+                system_content = TOOL_USE_SYSTEM_PROMPT_WITH_DOCS
+            else:
+                system_content = TOOL_USE_SYSTEM_PROMPT
 
             # Prepend system message to guide proper tool calling format
             messages = state["messages"]
