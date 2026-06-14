@@ -91,6 +91,17 @@ class RetrieverTool:
             try:
                 retriever = st.session_state.get("vector_retriever")
 
+                if retriever is None:
+                    logging.info(
+                        "vector_db_retriever invoked but no document is indexed yet."
+                    )
+                    return (
+                        "No documents have been uploaded or indexed yet in this "
+                        "session. This tool is unavailable for now — answer using "
+                        "your own knowledge or another appropriate tool "
+                        "(wikipedia_search, arxiv_search, tavily_web_search)."
+                    )
+
                 logging.info(f"vector_db_retriever tool invoked with query: {query}")
                 docs = retriever.invoke(query)
 

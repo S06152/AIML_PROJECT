@@ -41,12 +41,49 @@ After receiving tool results:
 - Do not simply copy the tool output.
 """
 
+# Appended to SYSTEM_PROMPT when the user HAS uploaded/indexed PDF document(s)
+# in this session (i.e. "vector_retriever" is present in st.session_state).
+DOCUMENT_CONTEXT_AVAILABLE = """
+
+SESSION CONTEXT:
+The user has uploaded and indexed PDF document(s) in this session, so the
+vector_db_retriever tool is available.
+
+Many questions — including questions that ask you to "explain", "define",
+"summarize", or describe a concept, section, term, or topic — may actually be
+referring to the content of these uploaded documents, even if the user does
+not explicitly say "in the document" or "according to the PDF".
+
+For such questions, call vector_db_retriever FIRST to check whether the
+uploaded document(s) contain relevant content, even if you believe you
+already know the answer from general knowledge. If the retrieved content is
+empty or clearly irrelevant to the question, you may then answer from your
+own knowledge or call another tool (wikipedia_search, arxiv_search,
+tavily_web_search) as appropriate.
+
+Use the other tools directly (without checking the retriever first) only when
+the question is unambiguously about something outside the scope of uploaded
+documents — e.g. current events, news, or topics unrelated to the document.
+"""
+
+# Appended to SYSTEM_PROMPT when NO documents have been uploaded/indexed yet.
+DOCUMENT_CONTEXT_UNAVAILABLE = """
+
+SESSION CONTEXT:
+No documents have been uploaded in this session, so vector_db_retriever is
+NOT available right now. Use wikipedia_search, arxiv_search, or
+tavily_web_search as appropriate, or answer directly from your own knowledge
+if no tool is needed.
+"""
+
 class Agent:
 
     def __init__(self):
         """
-        Initialize Agent with cached tools.
-        Tools are created once and reused across invocations.
+        Initialize Agent with tools.
+        Tools are recomputed in tool_calling_llm() on every invocation so
+        that a retriever added mid-session (after PDF upload) is picked up
+        without needing to recreate the Agent.
         """
         self._tools = ToolRegistry.get_tools()
         self._llm_with_tools = None
@@ -98,15 +135,28 @@ class Agent:
             - Respond directly without a tool call.
         """
         try:
+            # Recompute tools on every call — picks up vector_db_retriever
+            # as soon as "vector_retriever" appears in st.session_state,
+            # even if it wasn't there when this Agent was constructed
+            # (covers: query -> upload PDF -> query again, in the same run).
+            self._tools = ToolRegistry.get_tools()
             llm_with_tools = self._get_llm_with_tools()
 
             messages  = state["messages"]
 
             if not messages:
-                messages = [HumanMessage(content = state["question"])]   
+                messages = [HumanMessage(content = state["question"])]
+
+            # Tell the LLM whether document retrieval is available right now,
+            # so its automatic (tool_choice="auto") routing decision has the
+            # context it needs — without forcing any specific tool.
+            if "vector_retriever" in st.session_state:
+                system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_AVAILABLE
+            else:
+                system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_UNAVAILABLE
 
             logging.info("tool_calling_llm: invoking LLM with bound tools.")
-            messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+            messages = [SystemMessage(content=system_prompt)] + messages
 
             response = llm_with_tools.invoke(messages)
 
