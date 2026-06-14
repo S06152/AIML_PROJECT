@@ -70,14 +70,26 @@ class RetrieverTool:
 
         @tool
         def vector_db_retriever(query: str) -> str:
-            """Search and retrieve relevant information from uploaded PDF documents.
-            Use this tool when the user's question is about content from their uploaded documents,
-            domain-specific knowledge, or proprietary internal information."""
+            """
+            Search and retrieve information from user-uploaded documents.
+
+            Use this tool when the user asks about:
+            - Uploaded PDF documents
+            - Document summaries
+            - Information contained in uploaded files
+            - Internal or proprietary knowledge
+            - Questions that should be answered from the user's documents
+
+            Prefer this tool whenever relevant uploaded documents are available.
+
+            Do NOT use this tool for:
+            - General knowledge questions
+            - Current events or recent information
+            - Academic research papers
+            - Information that is not contained in the uploaded documents
+            """
             try:
                 retriever = st.session_state.get("vector_retriever")
-
-                if retriever is None:
-                    return "No documents have been indexed yet. Please upload and index PDF documents first."
 
                 logging.info(f"vector_db_retriever tool invoked with query: {query}")
                 docs = retriever.invoke(query)

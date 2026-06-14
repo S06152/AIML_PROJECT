@@ -2,6 +2,7 @@ from src.tools.retriever_tool import RetrieverTool
 from src.tools.arxiv_tool import ArxivTool
 from src.tools.tavily_tool import TavilySearchTool
 from src.tools.wiki_tool import WikiTool
+import streamlit as st
 
 class ToolRegistry:
 
@@ -11,9 +12,13 @@ class ToolRegistry:
         Returns a list of all available LangChain tools for the agent.
         Each tool must be a proper LangChain Tool object with name and description.
         """
-        return [
-            RetrieverTool.get_tool(),   # PDF document retriever (uses session state)
+        tools = [
             ArxivTool().get_tool(),
             TavilySearchTool().get_tool(),
-            WikiTool().get_tool()           
+            WikiTool().get_tool()
         ]
+ 
+        if "vector_retriever" in st.session_state:
+            tools.append(RetrieverTool.get_tool())
+
+        return tools

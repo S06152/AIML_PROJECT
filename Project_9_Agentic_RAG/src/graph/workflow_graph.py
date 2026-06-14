@@ -85,7 +85,7 @@ class GraphBuilder:
             logging.exception("ERROR while building workflow graph.")
             raise CustomException(e, sys)
     
-    def execute(self, graph, question: str):
+    def execute(self, graph, query: str):
         """
         Execute the full multi-agent pipeline.
 
@@ -98,12 +98,12 @@ class GraphBuilder:
 
         try:
             logging.info("WORKFLOW EXECUTION START")
-            logging.info(f"User topic: {question}")
+            logging.info(f"User topic: {query}")
 
             # Initial state
             initial_state = {
-                "messages": [HumanMessage(content = question)],
-                "question": question,
+                "messages": [HumanMessage(content = query)],
+                "question": query,
                 "tool_used":  ""
             }
 

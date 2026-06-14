@@ -8,9 +8,7 @@ from src.config.settings import Config
 from src.ingestion.pdf_loader import PDFLoader
 from src.embedding.embedding import EmbeddingManager
 from src.vectorstore.chroma_store import ChromaVectorStore
-#from src.retrieval.retriever import Retriever
 from src.tools.retriever_tool import RetrieverTool
-from src.chain.qa_chain import QAChain
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -178,15 +176,6 @@ class StreamlitApp:
                 # Store in session state for reuse across interactions
                 st.session_state["vector_retriever"] = vector_retriever
 
-                # Step 6: Build and cache QAChain
-                qa_chain = QAChain(
-                        retriever = vector_retriever,
-                        groq_api_key = user_controls["GROQ_API_KEY"],
-                        model_name = user_controls["LLM_MODEL"],
-                        temperature = user_controls["TEMPERATURE"],
-                        max_tokens = user_controls["TOKEN"],
-                    )
-                st.session_state["qa_chain"] = qa_chain
                 st.sidebar.write("✅ LLM chain created successfully")
                 logging.info("QAChain built and cached in session state.")
 
@@ -194,53 +183,4 @@ class StreamlitApp:
 
         except Exception as e:
             logging.exception("Ingestion pipeline failed.")
-            raise CustomException(e, sys)
-    
-    # -----------------------------------------------------------------------
-    # AUTOSAR Context Retrieval
-    # -----------------------------------------------------------------------
-    def retrieve_context(self, user_query: str, user_controls: dict) -> str:
-        """
-        Retrieve the most relevant document chunks for a user query.
-
-        Args:
-            user_query (str): The user's input query.
-            user_controls (dict): UI configuration dict.
-
-        Returns:
-            str: Concatenated top-K document chunks, or empty string
-                 if no documents have been indexed.
-
-        Raises:
-            CustomException: If retrieval fails.
-        """
-
-        retriever = st.session_state.get("vector_retriever")
-
-        if retriever is None:
-            logging.warning("No documents indexed. Context will be empty.")
-            return ""
-
-        try:
-            logging.info("Retrieving context for user query.")
-            qa_chain: Optional[QAChain] = st.session_state.get("qa_chain")
-
-            if qa_chain is None:
-                logging.info("QAChain not cached. Building now...")
-                qa_chain = QAChain(
-                        retriever = retriever,
-                        groq_api_key = user_controls["GROQ_API_KEY"],
-                        model_name = user_controls["LLM_MODEL"],
-                        temperature = user_controls["TEMPERATURE"],
-                        max_tokens = user_controls["TOKEN"]
-                    )
-                
-                st.session_state["qa_chain"] = qa_chain
-
-            context = qa_chain.run(user_query)
-            logging.info("Context retrieved: %d characters.", len(context))
-            return context
-        
-        except Exception as e:
-            logging.exception("Context retrieval failed.")
             raise CustomException(e, sys)

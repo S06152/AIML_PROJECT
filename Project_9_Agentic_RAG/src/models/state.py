@@ -10,4 +10,3 @@ warnings.filterwarnings("ignore")
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     question: str
-    tool_used: str
