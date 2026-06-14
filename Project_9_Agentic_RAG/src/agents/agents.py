@@ -47,23 +47,33 @@ DOCUMENT_CONTEXT_AVAILABLE = """
 
 SESSION CONTEXT:
 The user has uploaded and indexed PDF document(s) in this session, so the
-vector_db_retriever tool is available.
+vector_db_retriever tool is available. Uploaded documents are typically
+research papers, reports, manuals, or other technical/domain-specific
+material.
 
-Many questions — including questions that ask you to "explain", "define",
-"summarize", or describe a concept, section, term, or topic — may actually be
-referring to the content of these uploaded documents, even if the user does
-not explicitly say "in the document" or "according to the PDF".
+Decide between two categories of question:
 
-For such questions, call vector_db_retriever FIRST to check whether the
-uploaded document(s) contain relevant content, even if you believe you
-already know the answer from general knowledge. If the retrieved content is
-empty or clearly irrelevant to the question, you may then answer from your
-own knowledge or call another tool (wikipedia_search, arxiv_search,
-tavily_web_search) as appropriate.
+1. TECHNICAL / DOCUMENT-LIKELY QUESTIONS — the question asks you to explain,
+   define, summarize, or describe a technical term, method, algorithm,
+   architecture, process, section, finding, dataset, or other domain-specific
+   concept that could plausibly be covered in a research paper or technical
+   document — even if the user does not say "in the document" or "according
+   to the PDF".
+   -> Call vector_db_retriever FIRST, even if you believe you already know the
+      answer from general knowledge. If the retrieved content is empty or
+      clearly irrelevant, fall back to your own knowledge or another tool.
 
-Use the other tools directly (without checking the retriever first) only when
-the question is unambiguously about something outside the scope of uploaded
-documents — e.g. current events, news, or topics unrelated to the document.
+2. REAL-WORLD ENTITY / GENERAL-KNOWLEDGE QUESTIONS — the question asks "who is
+   <person>", or is about a specific real-world person, athlete, celebrity,
+   place, organization, current event, or general trivia. These topics are
+   essentially never the subject of a technical/research document.
+   -> Do NOT call vector_db_retriever for these. Follow the normal Tool Usage
+      Rules above instead (wikipedia_search for people/places/general
+      knowledge, tavily_web_search for current events, arxiv_search for
+      unrelated research topics).
+
+If you are unsure which category applies, prefer the normal Tool Usage Rules
+(wikipedia_search / arxiv_search / tavily_web_search) over vector_db_retriever.
 """
 
 # Appended to SYSTEM_PROMPT when NO documents have been uploaded/indexed yet.
