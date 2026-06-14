@@ -120,6 +120,46 @@ class MultiModalRAG:
             logging.exception("Error during RAG pipeline execution.")
             raise CustomException(e, sys)
 
+    def _build_citation_footer(self, tool_name: str, tool_metadata: dict) -> str:
+        """
+        Build a Markdown citation footer to display below the LLM response.
+
+        Rules:
+          - vector_db_retriever  → show document name(s), page number(s), and tool name.
+          - any other tool       → show source URL(s) and tool name.
+          - no tool called       → return empty string (no footer).
+
+        Args:
+            tool_name     (str):  Name of the tool invoked (empty string if none).
+            tool_metadata (dict): Metadata extracted by GraphBuilder._extract_tool_metadata.
+
+        Returns:
+            str: Markdown-formatted footer, or empty string if nothing to show.
+        """
+        if not tool_name:
+            return ""
+
+        lines = ["---", "**📎 Sources**"]
+
+        if tool_name == "vector_db_retriever":
+            sources = tool_metadata.get("sources", [])
+            if sources:
+                for s in sources:
+                    lines.append(f"- 📄 **{s['doc']}** — Page {s['page']}")
+            else:
+                lines.append("- *(Retrieved from indexed documents — page details unavailable)*")
+
+        else:
+            urls = tool_metadata.get("urls", [])
+            if urls:
+                for url in urls:
+                    lines.append(f"- 🔗 [{url}]({url})")
+            else:
+                lines.append("- *(Web source details unavailable)*")
+
+        lines.append(f"\n🛠️ **Tool Used:** `{tool_name}`")
+        return "\n".join(lines)
+
     def _display_graph(self, graph) -> None:
         """
         Display the Agentic RAG workflow graph in the Streamlit sidebar.
@@ -166,14 +206,15 @@ class MultiModalRAG:
         # Initialize response before the block to avoid UnboundLocalError
         response = None
         tool_name = None
+        tool_metadata = {}
 
         with st.chat_message("assistant"):
             with st.spinner("🔍 Searching & generating answer..."):
                 try:
                     logging.info("Starting RAG workflow for user query: '%s'", user_query)
 
-                    # Step 1: Execute graph and get response + tool name
-                    response, tool_name = self._graph.execute(graph, user_query)
+                    # Step 1: Execute graph and get response + tool name + source metadata
+                    response, tool_name, tool_metadata = self._graph.execute(graph, user_query)
 
                     # Display which tool was invoked
                     if tool_name:
@@ -182,6 +223,11 @@ class MultiModalRAG:
                         st.info("💡 **Tool Called:** `None` (Direct LLM response)")
 
                     st.markdown(response)
+
+                    # Render citation footer
+                    footer_md = self._build_citation_footer(tool_name, tool_metadata)
+                    if footer_md:
+                        st.markdown(footer_md)
                     
                     logging.info("Response generated successfully. Tool used: %s", tool_name or "None")
 
@@ -190,7 +236,11 @@ class MultiModalRAG:
                     raise CustomException(e,sys)
                 
         if response is not None:
-            # Include tool name in the stored message for chat history
+            # Include tool name + footer in the stored message for chat history
             tool_label = f"🛠️ **Tool Called:** `{tool_name}`\n\n" if tool_name else "💡 **Tool Called:** `None` (Direct LLM response)\n\n"
-            st.session_state["messages"].append({"role": "assistant", "content": tool_label + response})
+            footer_md = self._build_citation_footer(tool_name, tool_metadata)
+            history_content = tool_label + response
+            if footer_md:
+                history_content += "\n\n" + footer_md
+            st.session_state["messages"].append({"role": "assistant", "content": history_content})
                 

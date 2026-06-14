@@ -90,10 +90,16 @@ class GraphBuilder:
         Execute the full multi-agent pipeline.
 
         Args:
-            question (str): User input query
+            query (str): User input query
 
         Returns:
-            tuple: (response_str, tool_name) — final answer and the tool invoked (if any)
+            tuple: (response_str, tool_name, tool_metadata)
+                - response_str  : final answer string
+                - tool_name     : name of the tool invoked (or empty string)
+                - tool_metadata : dict with source info extracted from tool output
+                    For vector_db_retriever → {"sources": [{"doc": ..., "page": ...}, ...]}
+                    For web tools           → {"urls": [...]}
+                    Empty dict if no tool was called.
         """
 
         try:
@@ -114,6 +120,9 @@ class GraphBuilder:
             # Extract the tool name from the message history
             tool_name = self._extract_tool_name(messages)
 
+            # Extract source metadata from tool output
+            tool_metadata = self._extract_tool_metadata(messages, tool_name)
+
             # Extract the content of the last AI message as the final response
             response = ""
             if messages:
@@ -124,7 +133,7 @@ class GraphBuilder:
             logging.info("Workflow executed successfully.")
             logging.info("WORKFLOW EXECUTION END")
 
-            return response, tool_name
+            return response, tool_name, tool_metadata
 
         except Exception as e:
             logging.exception("ERROR during workflow execution.")
@@ -154,3 +163,69 @@ class GraphBuilder:
                 tool_name = msg.name
                 break
         return tool_name
+
+    def _extract_tool_metadata(self, messages, tool_name: str) -> dict:
+        """
+        Extract source metadata from ToolMessage content based on which tool was used.
+
+        For vector_db_retriever:
+            Parses lines like "[Source: filename.pdf, Page: 3]" from the tool output
+            and returns a deduplicated list of {doc, page} dicts.
+
+        For tavily_web_search / arxiv_search / wikipedia_search:
+            Parses lines like "Source: https://..." from the tool output and
+            returns a deduplicated list of URL strings.
+
+        Args:
+            messages (list): Full message history from the workflow.
+            tool_name (str): Name of the tool that was called.
+
+        Returns:
+            dict: {"sources": [...]} for retriever, {"urls": [...]} for web tools,
+                  or {} if no tool was called.
+        """
+        if not tool_name:
+            return {}
+
+        # Find the ToolMessage (the raw tool output)
+        tool_content = ""
+        for msg in messages:
+            if hasattr(msg, "type") and msg.type == "tool":
+                tool_content = msg.content if hasattr(msg, "content") else ""
+                break
+
+        if not tool_content:
+            return {}
+
+        try:
+            if tool_name == "vector_db_retriever":
+                # Parse "[Source: filename.pdf, Page: 3]" lines
+                import re
+                pattern = r"\[Source:\s*(.+?),\s*Page:\s*(\d+)\]"
+                matches = re.findall(pattern, tool_content)
+                seen = set()
+                sources = []
+                for doc, page in matches:
+                    key = (doc.strip(), page.strip())
+                    if key not in seen:
+                        seen.add(key)
+                        sources.append({"doc": doc.strip(), "page": page.strip()})
+                return {"sources": sources}
+
+            else:
+                # Parse "Source: <url>" lines produced by tavily / arxiv / wiki tools
+                import re
+                pattern = r"Source:\s*(https?://\S+)"
+                urls = re.findall(pattern, tool_content)
+                # Deduplicate while preserving order
+                seen = set()
+                unique_urls = []
+                for url in urls:
+                    if url not in seen:
+                        seen.add(url)
+                        unique_urls.append(url)
+                return {"urls": unique_urls}
+
+        except Exception as e:
+            logging.warning(f"Could not extract tool metadata: {e}")
+            return {}
