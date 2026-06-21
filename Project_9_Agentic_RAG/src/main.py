@@ -46,7 +46,7 @@ class AGENTICRAG:
 
             self._graph = GraphBuilder()
 
-            self._user_query = st.chat_input("💬 Enter your question here...")
+            self._user_query = None
 
             logging.info("Agentic RAG application initialized successfully.")
 
@@ -126,17 +126,34 @@ class AGENTICRAG:
                 type = "primary"
             )
 
-            if uploaded_files and index_clicked:
-                if self._needs_reindexing(uploaded_files):
-                    self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
+            # Auto-index whenever the selected files differ from what is
+            # currently indexed in this session (covers the case where the
+            # user types a question before/without explicitly clicking the
+            # button). The button remains available as an explicit,
+            # user-driven re-index trigger.
+            needs_reindexing = bool(uploaded_files) and self._needs_reindexing(uploaded_files)
 
-                    st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
+            if uploaded_files and (index_clicked or needs_reindexing):
+                self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
+                st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
+
+            if uploaded_files and not st.session_state.get("vector_retriever"):
+                st.sidebar.warning(
+                    "⚠️ Files are selected but not indexed yet. "
+                    "Click '⚡ Index PDF(s)' to make them searchable."
+                )
 
             # Build Agent Workflow Graph
             graph = self._graph.build_graph()
 
             # Display workflow graph
             self._display_graph(graph)
+
+            # Chat input is rendered *after* the sidebar/indexing logic above
+            # so that, within the same script run, any just-completed
+            # indexing has already updated session_state before a query
+            # submitted in this same run is processed below.
+            self._user_query = st.chat_input("💬 Enter your question here...")
 
             # Process user query
             if self._user_query:

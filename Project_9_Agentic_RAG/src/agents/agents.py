@@ -189,7 +189,7 @@ class Agent:
             if not messages:
                 messages = [HumanMessage(content = state["question"])]
 
-            if "vector_retriever" in st.session_state:
+            if st.session_state.get("vector_retriever") is not None:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_AVAILABLE
             else:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_UNAVAILABLE

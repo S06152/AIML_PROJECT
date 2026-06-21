@@ -45,10 +45,15 @@ class PDFLoader:
         """
         try:
             logging.info("Initializing PDFLoader.")
-            
-            if uploaded_file.type == "application/pdf":
-                self._uploaded_file = uploaded_file
-                logging.info("PDF file accepted")
+
+            if uploaded_file.type != "application/pdf":
+                logging.error("Rejected non-PDF file: type=%s", uploaded_file.type)
+                raise ValueError(
+                    f"Unsupported file type '{uploaded_file.type}'. Only PDF files are accepted."
+                )
+
+            self._uploaded_file = uploaded_file
+            logging.info("PDF file accepted")
 
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
             self._processor = BlipProcessor.from_pretrained(user_input['CAPTION_MODEL'])
