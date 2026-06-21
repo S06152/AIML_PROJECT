@@ -6,6 +6,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.models.state import State
 from src.tools.tool_registry import ToolRegistry
+from langchain_core.prompts import ChatPromptTemplate
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -151,6 +152,9 @@ class Agent:
             if not groq_api_key:
                 raise ValueError("GROQ_API_KEY is not configured.")
 
+            if not model_name:
+                raise ValueError("LLM_MODEL is not configured.")
+
             llm = ChatGroq(
                 groq_api_key = groq_api_key,
                 model_name = model_name,
@@ -177,11 +181,10 @@ class Agent:
         """
 
         try:
-            self._tools = ToolRegistry.get_tools()
 
             llm_with_tools = self._get_llm_with_tools()
         
-            messages = state.get("messages", [] )
+            messages = state.get("messages", [])
 
             if not messages:
                 messages = [HumanMessage(content = state["question"])]
@@ -191,13 +194,13 @@ class Agent:
             else:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_UNAVAILABLE
 
-            final_messages = SystemMessage(content = system_prompt) + messages
+            final_messages = [SystemMessage(content = system_prompt)] + messages
 
             logging.info("Invoking LLM with %s tool(s).", len(self._tools))
 
             response = llm_with_tools.invoke(final_messages)
 
-            return { "messages": [response] }
+            return {"messages": [response] }
 
         except Exception as e:
             logging.exception("Error during Agent execution.")
