@@ -1,5 +1,6 @@
 import sys
-from src.utils.logger import logging
+import os
+from src.utils.logger import logging, LOG_FILE_PATH
 from src.utils.exception import CustomException
 import streamlit as st
 from src.ui.streamlit_app import StreamlitApp
@@ -137,6 +138,8 @@ class AGENTICRAG:
 
             # Display workflow graph
             self._display_graph(graph)
+            # Offer the current session's log file for download
+            self._display_log_download()
 
             # Process user query
             if self._user_query:
@@ -162,6 +165,33 @@ class AGENTICRAG:
 
         except Exception as e:
             logging.warning("Unable to render workflow graph. Error: %s", str(e))
+
+    def _display_log_download(self) -> None:
+        """
+        Offer the current session's log file for download from the sidebar.
+
+        The log file is read fresh on every rerun so the download always
+        reflects the latest entries. Missing/unreadable log files are
+        handled gracefully instead of crashing the page.
+        """
+        try:
+            with st.sidebar:
+                if os.path.exists(LOG_FILE_PATH):
+                    with open(LOG_FILE_PATH, "rb") as log_file:
+                        log_bytes = log_file.read()
+
+                    st.download_button(
+                        label = "📄 Download log file",
+                        data = log_bytes,
+                        file_name = os.path.basename(LOG_FILE_PATH),
+                        mime = "text/plain",
+                        use_container_width = True,
+                    )
+                else:
+                    st.caption("No log entries yet.")
+
+        except Exception as e:
+            logging.warning("Unable to offer log file for download. Error: %s", str(e))
 
     def _run_agent_workflow(self, user_query: str, graph) -> None:
         """

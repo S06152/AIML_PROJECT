@@ -6,7 +6,6 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.models.state import State
 from src.tools.tool_registry import ToolRegistry
-from langchain_core.prompts import ChatPromptTemplate
 import warnings
 warnings.filterwarnings("ignore")
 
