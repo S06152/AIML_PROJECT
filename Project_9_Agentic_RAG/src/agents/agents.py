@@ -136,9 +136,9 @@ class Agent:
             logging.exception("Failed to initialize Agent.")
             raise CustomException(e, sys)
 
-    def _get_llm_with_tools(self):
+    def _get_base_llm(self):
         """
-        Create ChatGroq instance and bind tools.
+        Create and return a base ChatGroq instance (without tools).
         """
 
         try:
@@ -154,12 +154,24 @@ class Agent:
             if not model_name:
                 raise ValueError("LLM_MODEL is not configured.")
 
-            llm = ChatGroq(
+            return ChatGroq(
                 groq_api_key = groq_api_key,
                 model_name = model_name,
                 temperature = temperature,
                 max_tokens = max_tokens,
             )
+
+        except Exception as e:
+            logging.exception("Failed to initialize base LLM.")
+            raise CustomException(e, sys)
+
+    def _get_llm_with_tools(self):
+        """
+        Create ChatGroq instance and bind tools.
+        """
+
+        try:
+            llm = self._get_base_llm()
 
             return llm.bind_tools(
                 self._tools,
@@ -168,7 +180,7 @@ class Agent:
             )
 
         except Exception as e:
-            logging.exception("Failed to initialize LLM.")
+            logging.exception("Failed to initialize LLM with tools.")
             raise CustomException(e, sys)
 
     def tool_calling_llm(self, state: State):
@@ -197,7 +209,19 @@ class Agent:
 
             logging.info("Invoking LLM with %s tool(s).", len(self._tools))
 
-            response = llm_with_tools.invoke(final_messages)
+            try:
+                response = llm_with_tools.invoke(final_messages)
+            except Exception as tool_error:
+                error_str = str(tool_error)
+                if "tool_use_failed" in error_str or "Failed to call a function" in error_str:
+                    logging.warning(
+                        "Tool-bound invocation failed (model chose direct response). "
+                        "Retrying without tools."
+                    )
+                    base_llm = self._get_base_llm()
+                    response = base_llm.invoke(final_messages)
+                else:
+                    raise
 
             return {"messages": [response] }
 
