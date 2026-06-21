@@ -1,177 +1,204 @@
 import sys
-import streamlit as st
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-from src.models.state import State
+import streamlit as st
 from langchain_groq import ChatGroq
-from src.tools.tool_registry import ToolRegistry
 from langchain_core.messages import SystemMessage, HumanMessage
+from src.models.state import State
+from src.tools.tool_registry import ToolRegistry
+import warnings
+warnings.filterwarnings("ignore")
 
 SYSTEM_PROMPT = """
 You are an intelligent Agentic RAG assistant.
 
-Tool Usage Rules:
+Your primary responsibility is to understand the user's intent,
+select the most appropriate tool when necessary, and provide
+accurate, concise, and well-structured answers.
 
-1. Use vector_db_retriever for uploaded PDF documents,
-   private knowledge, and document-specific questions.
+========================
+TOOL SELECTION RULES
+========================
 
-2. Use arxiv_search for:
-   - research papers
-   - academic literature
-   - scientific publications
+1. vector_db_retriever
+   Use this tool when the user's question relates to:
+   - Uploaded PDF documents
+   - User-provided files
+   - Proprietary or private information
+   - Document summaries
+   - Questions that should be answered from uploaded content
 
-3. Use wikipedia_search for:
-   - general knowledge
-   - concepts
-   - people
-   - places
-   - historical information
+2. arxiv_search
+   Use this tool when the user asks about:
+   - Research papers
+   - Academic publications
+   - Scientific studies
+   - Technical literature
+   - Scholarly findings
+   - State-of-the-art research
 
-4. Use tavily_web_search for:
-   - current events
-   - recent developments
-   - latest information
-   - web information
+3. wikipedia_search
+   Use this tool when the user asks about:
+   - General knowledge
+   - Definitions
+   - Concepts
+   - Historical events
+   - People
+   - Places
+   - Organizations
+   - Background information
 
-If a tool is required, call the most appropriate tool.
+4. tavily_web_search
+   Use this tool when the user asks about:
+   - Current events
+   - Recent developments
+   - Latest news
+   - Live information
+   - Information that changes over time
+   - Real-time web information
 
-After receiving tool results:
-- Analyze the information.
-- Generate a concise and accurate answer.
-- Do not simply copy the tool output.
+5. Direct LLM Response
+   Do NOT call any tool when the question can be answered
+   directly using reasoning or general knowledge, such as:
+   - Python programming
+   - Coding examples
+   - Algorithms
+   - Mathematics
+   - Logical reasoning
+   - Writing assistance
+   - General explanations
+
+========================
+RESPONSE RULES
+========================
+
+- Select the single most appropriate tool whenever possible.
+- Do not call multiple tools unless absolutely necessary.
+- After receiving tool results, analyze and summarize them.
+- Do not copy tool output verbatim.
+- Generate a clear, accurate, and user-friendly response.
+- If no tool is required, answer directly.
+- If a tool returns no relevant information, explain that gracefully.
 """
 
-# Appended to SYSTEM_PROMPT when the user HAS uploaded/indexed PDF document(s)
-# in this session (i.e. "vector_retriever" is present in st.session_state).
 DOCUMENT_CONTEXT_AVAILABLE = """
 
 SESSION CONTEXT:
-The user has uploaded and indexed PDF document(s) in this session, so the
-vector_db_retriever tool is available. Uploaded documents are typically
-research papers, reports, manuals, or other technical/domain-specific
-material.
 
-Decide between two categories of question:
+The user has uploaded and indexed document(s) in this session.
 
-1. TECHNICAL / DOCUMENT-LIKELY QUESTIONS — the question asks you to explain,
-   define, summarize, or describe a technical term, method, algorithm,
-   architecture, process, section, finding, dataset, or other domain-specific
-   concept that could plausibly be covered in a research paper or technical
-   document — even if the user does not say "in the document" or "according
-   to the PDF".
-   -> Call vector_db_retriever FIRST, even if you believe you already know the
-      answer from general knowledge. If the retrieved content is empty or
-      clearly irrelevant, fall back to your own knowledge or another tool.
+When the question appears related to technical content,
+research topics, concepts, methods, findings, architecture,
+algorithms, processes, or document content, prefer using
+vector_db_retriever first.
 
-2. REAL-WORLD ENTITY / GENERAL-KNOWLEDGE QUESTIONS — the question asks "who is
-   <person>", or is about a specific real-world person, athlete, celebrity,
-   place, organization, current event, or general trivia. These topics are
-   essentially never the subject of a technical/research document.
-   -> Do NOT call vector_db_retriever for these. Follow the normal Tool Usage
-      Rules above instead (wikipedia_search for people/places/general
-      knowledge, tavily_web_search for current events, arxiv_search for
-      unrelated research topics).
+If retrieval returns irrelevant or insufficient information,
+then use your own knowledge or another suitable tool.
 
-If you are unsure which category applies, prefer the normal Tool Usage Rules
-(wikipedia_search / arxiv_search / tavily_web_search) over vector_db_retriever.
+For general knowledge, people, places, organizations,
+or current events, use the normal tool-selection rules.
 """
 
-# Appended to SYSTEM_PROMPT when NO documents have been uploaded/indexed yet.
 DOCUMENT_CONTEXT_UNAVAILABLE = """
 
 SESSION CONTEXT:
-No documents have been uploaded in this session, so vector_db_retriever is
-NOT available right now. Use wikipedia_search, arxiv_search, or
-tavily_web_search as appropriate, or answer directly from your own knowledge
-if no tool is needed.
+
+No documents have been uploaded or indexed in this session.
+
+The vector_db_retriever tool is currently unavailable.
+
+Use:
+- wikipedia_search
+- arxiv_search
+- tavily_web_search
+
+or answer directly if no tool is required.
 """
 
 class Agent:
+    """
+    Central Agent responsible for:
+        - Loading tools
+        - Configuring the LLM
+        - Selecting tools
+        - Producing tool calls or direct responses
+    """
 
-    def __init__(self):
-        """
-        Initialize Agent with tools.
-        Tools are recomputed in tool_calling_llm() on every invocation so
-        that a retriever added mid-session (after PDF upload) is picked up
-        without needing to recreate the Agent.
-        """
-        self._tools = ToolRegistry.get_tools()
-        self._llm_with_tools = None
+    def __init__(self) -> None:
+        try:
+            logging.info("Initializing Agent.")
+
+            self._tools = ToolRegistry.get_tools()
+
+            logging.info("Agent initialized successfully.")
+
+        except Exception as e:
+            logging.exception("Failed to initialize Agent.")
+            raise CustomException(e, sys)
 
     def _get_llm_with_tools(self):
         """
-        Build (or reuse) the LLM with bound tools.
-        Rebuilds only if user configuration has changed.
+        Create ChatGroq instance and bind tools.
         """
-        user_controls = st.session_state.get("user_controls", {})
 
-        groq_api_key = user_controls["GROQ_API_KEY"] or st.secrets.get("GROQ_API_KEY")
-        model_name   = user_controls["LLM_MODEL"]
-        temperature  = user_controls["TEMPERATURE"]
-        max_tokens   = user_controls["TOKEN"]
+        try:
+            user_controls = st.session_state.get("user_controls", {})
+            groq_api_key = user_controls.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+            model_name = user_controls.get("LLM_MODEL")
+            temperature = user_controls.get("TEMPERATURE", 0.1)
+            max_tokens = user_controls.get("TOKEN", 2048)
 
-        if not groq_api_key:
-            raise ValueError("GROQ_API_KEY is not set. Please configure it in Streamlit secrets.")
+            if not groq_api_key:
+                raise ValueError("GROQ_API_KEY is not configured.")
 
-        llm = ChatGroq(
-                groq_api_key=groq_api_key,
-                model_name=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens
+            llm = ChatGroq(
+                groq_api_key = groq_api_key,
+                model_name = model_name,
+                temperature = temperature,
+                max_tokens = max_tokens,
             )
-        
-        # Full toolset (with retriever) — used when documents are uploaded
-        self._llm_with_tools = llm.bind_tools(
+
+            return llm.bind_tools(
                 self._tools,
-                parallel_tool_calls=False,
-                tool_choice="auto"
+                parallel_tool_calls = False,
+                tool_choice = "auto"
             )
 
-        return self._llm_with_tools
-
+        except Exception as e:
+            logging.exception("Failed to initialize LLM.")
+            raise CustomException(e, sys)
 
     def tool_calling_llm(self, state: State):
         """
-        LangGraph node — the central decision-making node.
-
-        Builds a ChatGroq LLM with all 4 tools bound to it:
-            - vector_db_retriever  : domain-specific PDF content (only when docs uploaded)
-            - tavily_web_search    : live web / current events
-            - wikipedia_search     : encyclopaedic facts
-            - arxiv_search         : academic / research papers
-
-        The LLM receives the full message history and decides:
-            - Which tool to call (if any), OR
-            - Respond directly without a tool call.
+        LangGraph node responsible for:
+            1. Reading user query.
+            2. Selecting the best tool.
+            3. Returning a tool call or direct answer.
         """
-        try:
-            # Recompute tools on every call — picks up vector_db_retriever
-            # as soon as "vector_retriever" appears in st.session_state,
-            # even if it wasn't there when this Agent was constructed
-            # (covers: query -> upload PDF -> query again, in the same run).
-            self._tools = ToolRegistry.get_tools()
-            llm_with_tools = self._get_llm_with_tools()
 
-            messages  = state["messages"]
+        try:
+            self._tools = ToolRegistry.get_tools()
+
+            llm_with_tools = self._get_llm_with_tools()
+        
+            messages = state.get("messages", [] )
 
             if not messages:
                 messages = [HumanMessage(content = state["question"])]
 
-            # Tell the LLM whether document retrieval is available right now,
-            # so its automatic (tool_choice="auto") routing decision has the
-            # context it needs — without forcing any specific tool.
             if "vector_retriever" in st.session_state:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_AVAILABLE
             else:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_UNAVAILABLE
 
-            logging.info("tool_calling_llm: invoking LLM with bound tools.")
-            messages = [SystemMessage(content=system_prompt)] + messages
+            final_messages = SystemMessage(content = system_prompt) + messages
 
-            response = llm_with_tools.invoke(messages)
+            logging.info("Invoking LLM with %s tool(s).", len(self._tools))
 
-            return {"messages": [response]}
+            response = llm_with_tools.invoke(final_messages)
+
+            return { "messages": [response] }
 
         except Exception as e:
-            logging.exception("ERROR during workflow execution.")
+            logging.exception("Error during Agent execution.")
             raise CustomException(e, sys)

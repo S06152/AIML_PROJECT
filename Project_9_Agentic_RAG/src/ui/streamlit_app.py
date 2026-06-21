@@ -1,9 +1,7 @@
-# Standard Library Imports
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 import streamlit as st
-from typing import Optional
 from src.config.settings import Config
 from src.ingestion.pdf_loader import PDFLoader
 from src.embedding.embedding import EmbeddingManager
@@ -14,51 +12,40 @@ warnings.filterwarnings("ignore")
 
 class StreamlitApp:
     """
-    Main Streamlit UI controller for the Multi-Modal RAG Pipeline.
+    Streamlit UI controller for the Agentic RAG application.
 
     Responsibilities:
-        - Load and display sidebar configuration controls.
-        - Accept PDF uploads and run the RAG ingestion pipeline.
-        - Provide a Q&A chat interface for querying indexed documents.
-        - Display retrieved context and generated responses.
-
-    Session State Keys Used:
-        - ``vector_retriever`` : Configured LangChain retriever (after PDF upload).
-        - ``qa_chain``         : Initialized QAChain instance.
-        - ``chat_history``     : List of (question, answer) tuples.
+        - Render Streamlit UI components.
+        - Manage user configuration settings.
+        - Handle PDF document ingestion.
+        - Create embeddings and vector store.
+        - Configure retriever and store it in session state.
     """
 
     def __init__(self):
         """
-        Initialize StreamlitApp: parse config, prepare state.
+        Initialize Streamlit application.
 
         Raises:
-            CustomException: If config loading fails.
+            CustomException: If initialization fails.
         """
         try:
-            logging.info("Initializing StreamlitApp.")
+            logging.info("Initializing Streamlit application.")
             self._config = Config()
             self._user_control: dict = {}
 
             logging.info("StreamlitApp initialized successfully.")
 
         except Exception as e:
-            logging.exception("Error initializing StreamlitApp.")
+            logging.exception("Failed to initialize Streamlit application.")
             raise CustomException(e, sys)
 
-    # MAIN UI LOADER
     def load_streamlit_ui(self):
         """
-        Render the Streamlit page and sidebar configuration.
+        Render Streamlit page and sidebar configuration.
 
         Returns:
-            dict: User-selected configuration values including:
-                  GROQ_API_KEY, LLM_MODEL, TEMPERATURE, TOKEN,
-                  CHUNK_SIZE, CHUNK_OVERLAP, TOP_K, EMBEDDING_MODELS,
-                  CAPTION_MODEL, COLLECTION, uploaded_files.
-
-        Raises:
-            CustomException: If rendering fails.
+            dict: User configuration settings.
         """
         try:
             logging.info("Loading Streamlit UI.")
@@ -99,38 +86,32 @@ class StreamlitApp:
             self._user_control["EMBEDDING_MODELS"] = self._config.get_embedding_model()
             self._user_control["CAPTION_MODEL"] = self._config.get_caption_model()
 
-            logging.info("Streamlit UI rendered successfully.")
+            logging.info("Streamlit UI loaded  successfully.")
             return self._user_control
 
         except Exception as e:
-            logging.exception("Fatal error while rendering Streamlit UI.")
+            logging.exception("Failed to load Streamlit UI.")
             raise CustomException(e, sys)
     
-    # -----------------------------------------------------------------------
     # RAG Ingestion Pipeline
-    # -----------------------------------------------------------------------
-    def run_ingestion_pipeline(self, uploaded_file, user_controls: dict) -> Optional[str]:
+    def run_ingestion_pipeline(self, uploaded_file, user_controls: dict) -> None:
         """
-        Run the full RAG ingestion pipeline on uploaded PDF(s).
+        Execute the document ingestion pipeline.
 
         Steps:
-            1. PDFLoader        — extract per-page Documents from all PDFs.
-            2. ChunkingStrategy — split into overlapping chunks.
-            3. EmbeddingManager — vectorize with the configured embedding model.
-            4. ChromaVectorStore— index vectors in ChromaDB.
-            5. Retriever        — configure top-K retriever.
-            6. QAChain          — build and cache the RAG chain in session state.
+            1. Load PDF documents.
+            2. Generate embeddings.
+            3. Create Chroma vector store.
+            4. Configure retriever.
+            5. Store retriever in session state.
 
         Args:
-            uploaded_files (list): List of Streamlit UploadedFile objects.
-            user_controls (dict): UI configuration dict.
-
-        Raises:
-            CustomException: If any step in the pipeline fails.
+            uploaded_files: Uploaded PDF files.
+            user_controls: User-selected configuration.
         """
         try:
             with st.sidebar.spinner("🔎 Processing PDFs document...."):
-                logging.info("Starting RAG ingestion pipeline.")
+                logging.info("Starting document ingestion pipeline.")
 
                 all_documents = []
 
@@ -141,7 +122,7 @@ class StreamlitApp:
                         loader = PDFLoader(file, user_controls)
                         documents = loader.load_documents()
                         all_documents.extend(documents)
-                        logging.info(f"✅ PDF loaded: {len(documents)} pages extracted.")
+                        logging.info("PDF loaded successfully | File=%s | Pages=%s", file.name, len(documents))
 
                     except Exception as e:
                         logging.error(f"Failed to load {file.name}: {e}")
@@ -149,38 +130,30 @@ class StreamlitApp:
                         continue
                 st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(all_documents)))
                 
-                # Step 2: Chunk documents
-                #chunker = ChunkingStrategy(documents = documents, chunk_size = user_controls["CHUNK_SIZE"], chunk_overlap = user_controls["CHUNK_OVERLAP"])
-                #chunks = chunker.split_documents()
-                #logging.info("Chunking complete: %d chunks created.", len(chunks))
-                #st.write(f"✅ Created {len(chunks)} chunk(s).")
-                
-                # Step 3: Generate embeddings
+                # Step 2: Create Embeddings
                 embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
                 embeddings = embedding_mgr.create_embeddings()
-                logging.info("✅ Embeddings ready.")
-                st.sidebar.write("✅ Embeddings Done.")
+                logging.info("Embeddings created successfully.")
+                st.sidebar.write("✅ Embeddings generated successfully.")
 
-                # Step 4: Build ChromaDB index
-                #vector_store_mgr = ChromaVectorStore(chunks, embeddings)
+                # Step 3: Create Vector Store
                 vector_store_mgr = ChromaVectorStore(all_documents, embeddings)
                 vector_db = vector_store_mgr.create_vectorstore()
-                logging.info("✅ ChromaDB index built.")
-                st.sidebar.write("✅ ChromaDB vector store created successfully")
+                logging.info("Chroma vector store created successfully.")
+                st.sidebar.write( "✅ ChromaDB vector store created successfully.")
 
-                # Step 5: Configure retriever
+                # Step 4: Create Retriever
                 retriever_mgr = RetrieverTool(vector_db, top_k = user_controls["TOP_K"])
                 vector_retriever = retriever_mgr.get_retriever()
-                st.sidebar.write("✅ vector_retriever created successfully")
+                st.sidebar.write("✅ Retriever created successfully.")
 
-                # Store in session state for reuse across interactions
+                # Step 5: Store Retriever
                 st.session_state["vector_retriever"] = vector_retriever
+                logging.info("Retriever stored in session state.")
+                st.sidebar.success("✅ Documents indexed successfully.")
 
-                st.sidebar.write("✅ LLM chain created successfully")
-                logging.info("QAChain built and cached in session state.")
-
-                logging.info("RAG ingestion pipeline completed successfully.")
+                logging.info("Document ingestion pipeline completed successfully.")
 
         except Exception as e:
-            logging.exception("Ingestion pipeline failed.")
+            logging.exception("Document ingestion pipeline failed.")
             raise CustomException(e, sys)

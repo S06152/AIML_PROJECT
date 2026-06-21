@@ -7,55 +7,72 @@ from src.graph.workflow_graph import GraphBuilder
 import warnings
 warnings.filterwarnings("ignore")
 
-class MultiModalRAG:
+class AGENTICRAG:
     """
-    Top-level orchestrator for the Multi-Modal RAG Pipeline.
+    Top-level orchestrator for the Agentic RAG application.
 
     Responsibilities:
-        - Initialize the Streamlit UI and collect user configuration.
-        - Provide the ``run()`` entry point called by app.py.
-        - Coordinate the PDF upload → ingestion → retrieval → response workflow.
+        - Initialize the Streamlit user interface.
+        - Capture and manage user configuration settings.
+        - Coordinate document ingestion and indexing workflows.
+        - Execute Agentic RAG query processing using LangGraph.
+        - Manage chat interactions, tool invocation, and response rendering.
 
-    Usage (from app.py):
-        pipeline = MultiModalRAG()
-        pipeline.run()
+    Usage:
+        app = AGENTICRAG()
+        app.run()
     """
 
-    def __init__(self)-> None:
+    def __init__(self) -> None:
         """
-        Initialize the orchestrator: build the Streamlit UI and collect controls.
+        Initialize the Agentic RAG application components.
+
+        This includes:
+            - Loading the Streamlit interface.
+            - Capturing user configuration settings.
+            - Initializing the workflow graph builder.
+            - Preparing the chat input interface.
 
         Raises:
-            CustomException: If UI initialization fails.
+            CustomException: If initialization fails.
         """
         try:
-            logging.info("Initializing MultiModalRAG orchestrator.")
+            logging.info("Initializing Agentic RAG application.")
+
             self._app = StreamlitApp()
             self._user_input = self._app.load_streamlit_ui()
+
             st.session_state["user_controls"] = self._user_input
+
             self._graph = GraphBuilder()
 
             self._user_query = st.chat_input("💬 Enter your question here...")
-            
-            logging.info("Orchestrator initialized. User controls loaded successfully.")
+
+            logging.info("Agentic RAG application initialized successfully.")
 
         except Exception as e:
-            logging.exception("Failed to initialize MultiModalRAG orchestrator.")
+            logging.exception("Failed to initialize Agentic RAG application.")
             raise CustomException(e, sys)
 
     def _get_files_signature(self, uploaded_files):
         """
-        Generate unique signature for uploaded files.
-        Used to detect file changes for auto re-indexing.
+        Generate a unique signature for uploaded documents.
+
+        The signature is used to determine whether the uploaded
+        documents have changed and require re-indexing.
         """
         if not uploaded_files:
             return None
-        
+
         return tuple(sorted((f.name, f.size) for f in uploaded_files))
-    
+
     def _needs_reindexing(self, uploaded_files):
         """
-        Check whether documents changed.
+        Determine whether uploaded documents require re-indexing.
+
+        Returns:
+            bool: True if document changes are detected,
+                  otherwise False.
         """
         current_sig = self._get_files_signature(uploaded_files)
 
@@ -67,26 +84,24 @@ class MultiModalRAG:
         needs_update = (current_sig != prev_sig)
 
         if needs_update:
-            logging.info("Reindexing triggered due to file or DB change.")
+            logging.info("Document change detected. Re-indexing required.")
 
         return needs_update
-      
+
     def run(self) -> None:
         """
-        Execute the full Multi-Modal RAG application flow.
+        Execute the complete Agentic RAG workflow.
 
-        Phase 1 — Document Ingestion:
-            User uploads PDF(s) via sidebar → RAG ingestion pipeline runs →
-            retriever becomes ready for querying.
-
-        Phase 2 — Query & Retrieval:
-            User enters a query → relevant context retrieved from indexed
-            documents → response generated and displayed.
+        Workflow:
+            1. Display chat history.
+            2. Handle document uploads and indexing.
+            3. Build and display the workflow graph.
+            4. Process user queries through the Agentic RAG pipeline.
+            5. Render responses and tool usage
 
         Raises:
-            CustomException: Propagated from sub-components on fatal error.
+            CustomException: Propagated from underlying components.
         """
-
         try:
             # Chat History
             if "messages" not in st.session_state:
@@ -95,152 +110,115 @@ class MultiModalRAG:
             for message in st.session_state["messages"]:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-         
-            # Phase 1: PDF Upload + RAG Ingestion
-            uploaded_files = st.sidebar.file_uploader("📂 Upload PDF(s)", type = ["pdf"], accept_multiple_files = True, help = "Select one or more PDFs.")
-            index_clicked = st.sidebar.button("⚡ Index PDF(s)", disabled = (not uploaded_files), use_container_width = True, type = "primary")
-            
+
+            # Document Upload & Indexing
+            uploaded_files = st.sidebar.file_uploader(
+                "📂 Upload PDF(s)",
+                type = ["pdf"],
+                accept_multiple_files = True,
+                help = "Select one or more PDFs."
+            )
+
+            index_clicked = st.sidebar.button(
+                "⚡ Index PDF(s)",
+                disabled = (not uploaded_files),
+                use_container_width = True,
+                type = "primary"
+            )
+
             if uploaded_files and index_clicked:
                 if self._needs_reindexing(uploaded_files):
                     self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
-                    st.session_state["_files_signature"] = (self._get_files_signature(uploaded_files))
 
-            # ---------------------------------------------------------------
-            # Phase 2: User Query + RAG Response
-            # ---------------------------------------------------------------
+                    st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
+
+            # Build Agent Workflow Graph
             graph = self._graph.build_graph()
 
-            # Display the Agentic Workflow Graph in sidebar
+            # Display workflow graph
             self._display_graph(graph)
 
+            # Process user query
             if self._user_query:
                 self._run_agent_workflow(self._user_query.strip(), graph)
 
         except Exception as e:
-            logging.exception("Error during RAG pipeline execution.")
+            logging.exception("Error while executing the Agentic RAG workflow.")
             raise CustomException(e, sys)
-
-    def _build_citation_footer(self, tool_name: str, tool_metadata: dict) -> str:
-        """
-        Build a Markdown citation footer to display below the LLM response.
-
-        Rules:
-          - vector_db_retriever  → show document name(s), page number(s), and tool name.
-          - any other tool       → show source URL(s) and tool name.
-          - no tool called       → return empty string (no footer).
-
-        Args:
-            tool_name     (str):  Name of the tool invoked (empty string if none).
-            tool_metadata (dict): Metadata extracted by GraphBuilder._extract_tool_metadata.
-
-        Returns:
-            str: Markdown-formatted footer, or empty string if nothing to show.
-        """
-        if not tool_name:
-            return ""
-
-        lines = ["---", "**📎 Sources**"]
-
-        if tool_name == "vector_db_retriever":
-            sources = tool_metadata.get("sources", [])
-            if sources:
-                for s in sources:
-                    lines.append(f"- 📄 **{s['doc']}** — Page {s['page']}")
-            else:
-                lines.append("- *(Retrieved from indexed documents — page details unavailable)*")
-
-        else:
-            urls = tool_metadata.get("urls", [])
-            if urls:
-                for url in urls:
-                    lines.append(f"- 🔗 [{url}]({url})")
-            else:
-                lines.append("- *(Web source details unavailable)*")
-
-        lines.append(f"\n🛠️ **Tool Used:** `{tool_name}`")
-        return "\n".join(lines)
 
     def _display_graph(self, graph) -> None:
         """
-        Display the Agentic RAG workflow graph in the Streamlit sidebar.
-
-        Uses LangGraph's built-in Mermaid diagram rendering to produce
-        a PNG image of the compiled state graph.
-
-        Args:
-            graph: Compiled LangGraph StateGraph instance.
+        Display workflow graph in sidebar.
         """
         try:
             with st.sidebar:
-                st.subheader("🔀 Agent Workflow Graph")
-                
-                # Method 1: Try to render as PNG image (requires grandalf package)
                 try:
                     graph_image = graph.get_graph().draw_mermaid_png()
-                    st.image(graph_image, caption="Agentic RAG Workflow", use_container_width=True)
+                    st.image(graph_image, caption = "Agentic RAG Workflow", use_container_width = True )
+
                 except Exception:
-                    # Method 2: Fallback to Mermaid text diagram
                     mermaid_text = graph.get_graph().draw_mermaid()
-                    st.code(mermaid_text, language="mermaid")
+                    st.code(mermaid_text, language = "mermaid")
 
         except Exception as e:
-            logging.warning(f"Could not display workflow graph: {e}")
+            logging.warning("Unable to render workflow graph. Error: %s", str(e))
 
     def _run_agent_workflow(self, user_query: str, graph) -> None:
         """
-        Retrieve relevant context and generate a response for the user query.
+        Execute the Agentic RAG workflow for a user query.
+
+        The workflow may:
+            - Generate a direct LLM response.
+            - Invoke a retriever tool.
+            - Invoke external knowledge tools.
+            - Return source attribution information.
 
         Args:
-            user_query (str): Validated, non-empty user query string.
+            user_query (str): User question submitted through the chat interface.
+            graph: Compiled LangGraph workflow.
 
         Raises:
-            CustomException: If context retrieval or response generation fails.
+            CustomException: If workflow execution fails.
         """
 
-        st.session_state["messages"].append({"role": "user", "content": user_query})
+        st.session_state["messages"].append({"role" : "user", "content" : user_query})
 
-        # Display the user message immediately before generating response
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Initialize response before the block to avoid UnboundLocalError
         response = None
         tool_name = None
-        tool_metadata = {}
 
         with st.chat_message("assistant"):
             with st.spinner("🔍 Searching & generating answer..."):
                 try:
-                    logging.info("Starting RAG workflow for user query: '%s'", user_query)
+                    logging.info("Executing Agentic RAG workflow for query: '%s'", user_query)
 
-                    # Step 1: Execute graph and get response + tool name + source metadata
-                    response, tool_name, tool_metadata = self._graph.execute(graph, user_query)
+                    response, tool_name = self._graph.execute(graph, user_query)
 
-                    # Display which tool was invoked
                     if tool_name:
-                        st.info(f"🛠️ **Tool Called:** `{tool_name}`")
+                        formatted_response = (
+                            f"{response}\n"
+                            f"[Tool_Used : {tool_name}]"
+                        )
                     else:
-                        st.info("💡 **Tool Called:** `None` (Direct LLM response)")
+                        formatted_response = response
+    
+                    st.markdown(formatted_response)
 
-                    st.markdown(response)
-
-                    # Render citation footer
-                    footer_md = self._build_citation_footer(tool_name, tool_metadata)
-                    if footer_md:
-                        st.markdown(footer_md)
-                    
-                    logging.info("Response generated successfully. Tool used: %s", tool_name or "None")
+                    logging.info("Agentic RAG response generated successfully. Tool invoked: %s", tool_name or "None")
 
                 except Exception as e:
-                    logging.exception("RAG workflow failed for query: '%s'", user_query)
-                    raise CustomException(e,sys)
-                
-        if response is not None:
-            # Include tool name + footer in the stored message for chat history
-            tool_label = f"🛠️ **Tool Called:** `{tool_name}`\n\n" if tool_name else "💡 **Tool Called:** `None` (Direct LLM response)\n\n"
-            footer_md = self._build_citation_footer(tool_name, tool_metadata)
-            history_content = tool_label + response
-            if footer_md:
-                history_content += "\n\n" + footer_md
-            st.session_state["messages"].append({"role": "assistant", "content": history_content})
-                
+                    logging.exception("Agentic RAG workflow execution failed for query: '%s'", user_query)
+                    raise CustomException(e, sys)
+
+        if response:
+            history_content = response
+            
+            if tool_name:
+                history_content = (
+                    f"🛠️ Tool Called : {tool_name}\n"
+                    f"{response}"
+                )
+
+            st.session_state["messages"].append({"role" : "assistant", "content" : history_content})

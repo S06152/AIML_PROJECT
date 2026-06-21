@@ -1,67 +1,86 @@
 import sys
-import warnings
-
-from langchain_community.utilities import ArxivAPIWrapper
-from langchain_core.tools import tool
-
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-
+from langchain_community.utilities import ArxivAPIWrapper
+from langchain_core.tools import tool
+import warnings
 warnings.filterwarnings("ignore")
 
-
 class ArxivTool:
+    """
+    Wrapper around LangChain ArxivAPIWrapper.
+
+    Responsibilities:
+        - Search arXiv for academic papers.
+        - Retrieve scientific and technical literature.
+        - Expose a LangChain-compatible tool for Agentic RAG.
+    """
 
     def __init__(self):
-        try:
-            self._api_wrapper = ArxivAPIWrapper(
-                top_k_results=3,
-                load_max_docs=3,
-                doc_content_chars_max=4000
-            )
+        """
+        Initialize Arxiv API wrapper.
 
-            logging.info("Arxiv Tool initialized")
+        Raises:
+            CustomException: If initialization fails.
+        """
+        try:
+            self._api_wrapper = ArxivAPIWrapper(top_k_results = 3, load_max_docs = 3, doc_content_chars_max = 4000)
+
+            logging.info("ArxivTool initialized successfully.")
 
         except Exception as e:
-            logging.exception("Failed to initialize Arxiv Tool.")
+            logging.exception("Failed to initialize ArxivTool.")
             raise CustomException(e, sys)
 
     def get_tool(self):
+        """
+        Create and return the LangChain tool.
+
+        Returns:
+            Tool: LangChain-compatible tool instance.
+        """
+
         api_wrapper = self._api_wrapper
 
         @tool
         def arxiv_search(query: str) -> str:
             """
-            Search arXiv for academic and scientific literature.
+            Search arXiv for academic research papers,
+            scientific publications, technical reports,
+            and scholarly literature.
 
-            Use this tool when the user asks for:
+            Use this tool when the user asks about:
             - Research papers
             - Academic publications
             - Scientific studies
             - Technical literature
-            - Scholarly findings
-            - State-of-the-art research
+            - Machine Learning research
+            - AI papers
+            - Physics, Mathematics, Computer Science
+            - State-of-the-art research findings
 
-            Do not use this tool for:
-            - Current news or real-time information
+            Do NOT use this tool for:
+            - Current news
+            - Real-time information
             - General encyclopedic knowledge
-            - User-uploaded documents or private knowledge bases
+            - User-uploaded documents
+            - Private knowledge bases
             """
             try:
-                logging.info(
-                    f"arxiv_search tool invoked with query: {query}"
-                )
+                logging.info("arxiv_search tool invoked | Query='%s'", query)
 
                 result = api_wrapper.run(query)
 
-                return (
-                    result
-                    if result
-                    else "No arXiv results found for the given query."
-                )
+                if not result:
+                    logging.warning("No arXiv results found for query='%s'", query)
+                    return ("No arXiv research papers found for the given query.")
+
+                logging.info("arXiv search completed successfully.")
+
+                return result
 
             except Exception as e:
-                logging.exception("Error in arxiv_search tool.")
-                return f"Error searching arXiv: {str(e)}"
+                logging.exception("Error while executing arxiv_search.")
+                return (f"Error searching arXiv: {str(e)}")
 
         return arxiv_search

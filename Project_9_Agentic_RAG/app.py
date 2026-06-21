@@ -1,7 +1,7 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-from src.main import MultiModalRAG
+from src.main import AGENTICRAG
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -9,11 +9,11 @@ if __name__ == "__main__":
 
     try:
         logging.info("APPLICATION START")
-        logging.info("Initializing Multi-Modal RAG Pipeline (Streamlit App)")
+        logging.info("Initializing Agentic RAG Knowledge Assistant with External Tool Integration(Streamlit App)")
 
         # Initialize Application
         logging.info("Creating Streamlit application instance...")
-        app = MultiModalRAG()
+        app = AGENTICRAG()
 
         logging.info("Application instance created successfully | Class = %s", type(app).__name__)
 
@@ -25,5 +25,5 @@ if __name__ == "__main__":
         logging.info("APPLICATION END")
 
     except Exception as e:
-        logging.exception("CRITICAL ERROR: Failed to launch Multi-Modal RAG Pipeline application.")
+        logging.exception("CRITICAL ERROR: Failed to launch Agentic RAG Knowledge Assistant with External Tool Integration application.")
         raise CustomException(e, sys)

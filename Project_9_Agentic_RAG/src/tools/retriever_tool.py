@@ -1,71 +1,72 @@
-# Standard library imports
 import sys
-import streamlit as st
 from src.utils.logger import logging
 from src.utils.exception import CustomException
+import streamlit as st
 from langchain_core.tools import tool
-
+import warnings
+warnings.filterwarnings("ignore")
 
 class RetrieverTool:
     """
-    Wrapper class that creates a LangChain tool from the
-    VectorStoreRetriever stored in Streamlit session state.
+    Retriever manager for Agentic RAG.
 
     Responsibilities:
-    - Provide a proper LangChain @tool for the Agentic RAG pipeline
-    - Retrieve relevant document chunks from the indexed vector store
-    - Return formatted context from uploaded PDFs
+        - Create a VectorStoreRetriever.
+        - Retrieve relevant content from indexed documents.
+        - Expose a LangChain tool for tool-calling agents.
     """
 
-    def __init__(self, vector_store=None, top_k: int = 5):
+    def __init__(self, vector_store = None, top_k: int = 5) -> None:
         """
         Initialize RetrieverTool.
 
         Args:
-            vector_store: Optional VectorStore instance (used during ingestion).
-            top_k (int): Number of top similar documents to retrieve.
+            vector_store: Vector database instance.
+            top_k (int): Number of documents to retrieve.
         """
         try:
-            logging.info(f"Initializing RetrieverTool with top_k = {top_k}.")
+            logging.info("Initializing RetrieverTool | top_k = %s", top_k)
+
             self.vector_store = vector_store
             self.top_k = top_k
             self._retriever = None
 
         except Exception as e:
-            logging.exception("Error during RetrieverTool initialization.")
+            logging.exception("Failed to initialize RetrieverTool.")
             raise CustomException(e, sys)
 
     def get_retriever(self):
         """
-        Create and return a VectorStoreRetriever instance.
-        Used during ingestion pipeline to store in session state.
+        Create and return a VectorStoreRetriever.
 
         Returns:
-            VectorStoreRetriever: Configured retriever instance.
+            VectorStoreRetriever
         """
         try:
             if self._retriever is None:
-                logging.info(
-                    f"Creating VectorStoreRetriever with similarity search (top_k = {self.top_k})."
-                )
+
+                logging.info("Creating VectorStoreRetriever | ""search_type=similarity | top_k = %s", self.top_k)
+
                 self._retriever = self.vector_store.as_retriever(
-                    search_type="similarity",
-                    search_kwargs={"k": self.top_k}
+                    search_type = "similarity",
+                    search_kwargs = {"k": self.top_k}
                 )
+
                 logging.info("VectorStoreRetriever created successfully.")
+
             return self._retriever
 
         except Exception as e:
-            logging.exception("Error while creating VectorStoreRetriever.")
+            logging.exception("Failed to create VectorStoreRetriever.")
             raise CustomException(e, sys)
 
     @staticmethod
     def get_tool():
         """
-        Returns a proper LangChain @tool for use in ToolNode / bind_tools.
+        Create LangChain retriever tool.
 
-        The tool retrieves documents from the session state vector retriever.
-        If no documents are indexed yet, it returns a helpful message.
+        Returns:
+            Tool: LangChain-compatible tool.
         """
 
         @tool
@@ -77,46 +78,56 @@ class RetrieverTool:
             - Uploaded PDF documents
             - Document summaries
             - Information contained in uploaded files
-            - Internal or proprietary knowledge
-            - Questions that should be answered from the user's documents
+            - Internal knowledge
+            - Proprietary content
+            - Questions that reference uploaded documents
 
-            Prefer this tool whenever relevant uploaded documents are available.
+            Prefer this tool whenever indexed documents
+            may contain the answer.
 
             Do NOT use this tool for:
-            - General knowledge questions
-            - Current events or recent information
-            - Academic research papers
-            - Information that is not contained in the uploaded documents
+            - General knowledge
+            - Current events
+            - Breaking news
+            - Academic paper search
+            - Information outside uploaded documents
             """
             try:
                 retriever = st.session_state.get("vector_retriever")
 
                 if retriever is None:
-                    logging.info(
-                        "vector_db_retriever invoked but no document is indexed yet."
-                    )
-                    return (
-                        "No documents have been uploaded or indexed yet in this "
-                        "session. This tool is unavailable for now — answer using "
-                        "your own knowledge or another appropriate tool "
-                        "(wikipedia_search, arxiv_search, tavily_web_search)."
-                    )
 
-                logging.info(f"vector_db_retriever tool invoked with query: {query}")
+                    logging.warning("vector_db_retriever called but no retriever exists in session.")
+
+                    return ("No documents have been uploaded or indexed in the current session.")
+
+                logging.info("vector_db_retriever invoked | Query = '%s'", query)
+
                 docs = retriever.invoke(query)
 
                 if not docs:
-                    return "No relevant documents found for the given query."
 
-                # Format documents into a single string for the LLM
-                formatted = "\n\n".join(
-                    f"[Source: {doc.metadata.get('source', 'unknown')}, Page: {doc.metadata.get('page', 'N/A')}]\n{doc.page_content}"
-                    for doc in docs
-                )
-                return formatted
+                    logging.info("No matching documents found for query = '%s'", query)
+
+                    return ("No relevant information was found in the uploaded documents." )
+
+                formatted_docs = []
+
+                for doc in docs:
+                    source = doc.metadata.get("source", "Unknown")
+                    page = doc.metadata.get("page", "N/A" )
+
+                    formatted_docs.append(
+                        f"[Source: {source} | Page: {page}]\n"
+                        f"{doc.page_content}"
+                    )
+
+                logging.info("Retrieved %s document chunks.", len(docs))
+
+                return "\n\n".join(formatted_docs)
 
             except Exception as e:
-                logging.exception("Error in vector_db_retriever tool.")
-                return f"Error retrieving documents: {str(e)}"
+                logging.exception("Error while executing vector_db_retriever.")
+                return (f"Document retrieval failed: {str(e)}")
 
         return vector_db_retriever

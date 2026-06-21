@@ -2,33 +2,54 @@ from src.tools.retriever_tool import RetrieverTool
 from src.tools.arxiv_tool import ArxivTool
 from src.tools.tavily_tool import TavilySearchTool
 from src.tools.wiki_tool import WikiTool
+from src.utils.logger import logging
+import warnings
+warnings.filterwarnings("ignore")
 
 class ToolRegistry:
+    """
+    Central registry for all tools available to the Agentic RAG system.
+
+    Responsibilities:
+        - Create and return all LangChain tools.
+        - Ensure the same tool set is provided to both:
+            * LLM.bind_tools()
+            * LangGraph ToolNode()
+        - Maintain a stable tool inventory throughout the session.
+
+    Available Tools:
+        - vector_db_retriever : Search uploaded documents.
+        - wikipedia_search    : General knowledge and encyclopedic information.
+        - arxiv_search        : Academic and research literature.
+        - tavily_web_search   : Current and web-based information.
+    """
 
     @staticmethod
     def get_tools():
         """
-        Returns a list of all available LangChain tools for the agent.
-        Each tool must be a proper LangChain Tool object with name and description.
+        Return all tools available to the Agentic RAG agent.
 
-        vector_db_retriever is ALWAYS included (regardless of whether a PDF has
-        been indexed yet) so that:
-          - The tool list bound to the LLM and the ToolNode's tool list are
-            always identical and stable, with no dependency on *when* during
-            a Streamlit rerun this is called relative to PDF ingestion.
-          - The graph/LLM never need to be rebuilt just because a document
-            was indexed mid-session.
+        Notes:
+            - vector_db_retriever is always included.
+            - If no documents have been indexed yet, the tool itself
+              handles the situation gracefully and returns an informative
+              message instead of raising an error.
+            - Keeping the tool list constant prevents mismatches between
+              the LLM's bound tools and the LangGraph ToolNode.
 
-        If no document has been indexed yet, vector_db_retriever itself
-        returns a clear "not available yet" message (see retriever_tool.py)
-        instead of erroring — and the dynamic system prompt in agents.py
-        tells the LLM not to rely on it in that case.
+        Returns:
+            list: Collection of LangChain tool instances.
         """
+
+        logging.info( "Loading Agentic RAG tool registry.")
+
         tools = [
-            ArxivTool().get_tool(),
-            TavilySearchTool().get_tool(),
-            WikiTool().get_tool(),
             RetrieverTool.get_tool(),
+            WikiTool().get_tool(),
+            ArxivTool().get_tool(),
+            TavilySearchTool().get_tool()
         ]
+
+        logging.info("Successfully loaded %s tools.", len(tools))
 
         return tools

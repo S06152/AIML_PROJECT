@@ -3,6 +3,8 @@ import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
 from langchain_huggingface import HuggingFaceEmbeddings
+import warnings
+warnings.filterwarnings("ignore")
 
 class EmbeddingManager:
     """
@@ -50,13 +52,9 @@ class EmbeddingManager:
         try:
             # Create embeddings only once (singleton pattern)
             if self._embeddings is None:
-                logging.info(
-                    f"Creating HuggingFaceEmbeddings instance with model: {self.model_name}"
-                )
+                logging.info(f"Creating HuggingFaceEmbeddings instance with model: {self.model_name}")
 
-                self._embeddings = HuggingFaceEmbeddings(
-                    model_name = self.model_name
-                )
+                self._embeddings = HuggingFaceEmbeddings( model_name = self.model_name)
 
                 logging.info("HuggingFaceEmbeddings instance created successfully.")
 

@@ -3,10 +3,15 @@ from typing_extensions import TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
-import warnings
-warnings.filterwarnings("ignore")
-
-# Graph state
 class State(TypedDict):
+    """
+    Shared state object used throughout the LangGraph workflow.
+
+    Attributes:
+        messages: Complete conversation history including
+                  HumanMessage, AIMessage, and ToolMessage.
+        question: Original user query.
+    """
+
     messages: Annotated[list[AnyMessage], add_messages]
     question: str

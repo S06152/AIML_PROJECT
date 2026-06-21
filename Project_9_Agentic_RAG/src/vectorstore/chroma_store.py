@@ -1,4 +1,3 @@
-# Standard Library Imports
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
@@ -6,6 +5,8 @@ from typing import List
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
+import warnings
+warnings.filterwarnings("ignore")
 
 class ChromaVectorStore:
     """
