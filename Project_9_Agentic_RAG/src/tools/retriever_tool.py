@@ -94,7 +94,7 @@ class RetrieverTool:
             """
             try:
                 retriever = st.session_state.get("vector_retriever")
-
+                st.write("retriever tool called",retriever)
                 if retriever is None:
 
                     logging.warning("vector_db_retriever called but no retriever exists in session.")
