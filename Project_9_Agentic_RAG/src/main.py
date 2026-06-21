@@ -217,8 +217,8 @@ class AGENTICRAG:
             
             if tool_name:
                 history_content = (
-                    f"🛠️ Tool Called : {tool_name}\n"
-                    f"{response}"
+                    f"{response}\n"
+                    f"[🛠️ Tool_Used : {tool_name}]"
                 )
 
             st.session_state["messages"].append({"role" : "assistant", "content" : history_content})
