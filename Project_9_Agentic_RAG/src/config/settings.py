@@ -177,29 +177,3 @@ class Config:
         except Exception as e:
             logging.exception("Error fetching CAPTION_MODEL.")
             raise CustomException(e, sys)
-
-    def get_persist_directory(self) -> str:
-        """
-        Returns the directory path for persistent ChromaDB storage.
-        """
-        try:
-            value = self.config["DEFAULT"].get("PERSIST_DIRECTORY")
-            logging.debug(f"PERSIST_DIRECTORY fetched: {value}")
-            return value
-
-        except Exception as e:
-            logging.exception("Error fetching PERSIST_DIRECTORY.")
-            raise CustomException(e, sys)
-
-    def get_collection_name(self) -> str:
-        """
-        Returns the ChromaDB collection name for vector storage.
-        """
-        try:
-            value = self.config["DEFAULT"].get("COLLECTION_NAME")
-            logging.debug(f"COLLECTION_NAME fetched: {value}")
-            return value
-
-        except Exception as e:
-            logging.exception("Error fetching COLLECTION_NAME.")
-            raise CustomException(e, sys)

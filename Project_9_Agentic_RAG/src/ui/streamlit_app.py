@@ -85,8 +85,6 @@ class StreamlitApp:
             self._user_control["TOP_K"] = self._config.get_top_k()
             self._user_control["EMBEDDING_MODELS"] = self._config.get_embedding_model()
             self._user_control["CAPTION_MODEL"] = self._config.get_caption_model()
-            self._user_control["PERSIST_DIRECTORY"] = self._config.get_persist_directory()
-            self._user_control["COLLECTION_NAME"] = self._config.get_collection_name()
 
             logging.info("Streamlit UI loaded  successfully.")
             return self._user_control
@@ -98,12 +96,12 @@ class StreamlitApp:
     # RAG Ingestion Pipeline
     def run_ingestion_pipeline(self, uploaded_file, user_controls: dict) -> None:
         """
-        Execute the document ingestion pipeline with persistent storage.
+        Execute the document ingestion pipeline.
 
         Steps:
             1. Load PDF documents.
             2. Generate embeddings.
-            3. Create persistent Chroma vector store.
+            3. Create Chroma vector store.
             4. Configure retriever.
             5. Store retriever in session state.
 
@@ -138,19 +136,11 @@ class StreamlitApp:
                 logging.info("Embeddings created successfully.")
                 st.sidebar.write("✅ Embeddings generated successfully.")
 
-                # Step 3: Create Persistent Vector Store
-                persist_dir = user_controls.get("PERSIST_DIRECTORY", "./chroma_db")
-                collection_name = user_controls.get("COLLECTION_NAME", "agentic_rag_collection")
-
-                vector_store_mgr = ChromaVectorStore(
-                    documents=all_documents,
-                    embeddings=embeddings,
-                    persist_directory=persist_dir,
-                    collection_name=collection_name
-                )
+                # Step 3: Create Vector Store
+                vector_store_mgr = ChromaVectorStore(all_documents, embeddings)
                 vector_db = vector_store_mgr.create_vectorstore()
-                logging.info("Persistent Chroma vector store created successfully.")
-                st.sidebar.write("✅ ChromaDB vector store created and persisted to disk.")
+                logging.info("Chroma vector store created successfully.")
+                st.sidebar.write( "✅ ChromaDB vector store created successfully.")
 
                 # Step 4: Create Retriever
                 retriever_mgr = RetrieverTool(vector_db, top_k = user_controls["TOP_K"])
@@ -160,86 +150,10 @@ class StreamlitApp:
                 # Step 5: Store Retriever
                 st.session_state["vector_retriever"] = vector_retriever
                 logging.info("Retriever stored in session state.")
-                st.sidebar.success("✅ Documents indexed and persisted successfully.")
+                st.sidebar.success("✅ Documents indexed successfully.")
 
                 logging.info("Document ingestion pipeline completed successfully.")
 
         except Exception as e:
             logging.exception("Document ingestion pipeline failed.")
-            raise CustomException(e, sys)
-
-    def load_persisted_vectorstore(self, user_controls: dict) -> bool:
-        """
-        Attempt to load an existing persisted vector store from disk.
-
-        This enables the application to restore previously indexed
-        documents across restarts without requiring re-upload.
-
-        Args:
-            user_controls: User-selected configuration containing
-                           PERSIST_DIRECTORY, COLLECTION_NAME, EMBEDDING_MODELS, TOP_K.
-
-        Returns:
-            bool: True if vector store was loaded successfully, False otherwise.
-        """
-        try:
-            persist_dir = user_controls.get("PERSIST_DIRECTORY", "./chroma_db")
-            collection_name = user_controls.get("COLLECTION_NAME", "agentic_rag_collection")
-
-            # Check if persisted store exists
-            if not ChromaVectorStore.store_exists(persist_dir):
-                logging.info("No persisted vector store found. Skipping auto-load.")
-                return False
-
-            logging.info("Persisted vector store detected. Attempting to load...")
-
-            # Create embeddings instance for loading
-            embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
-            embeddings = embedding_mgr.create_embeddings()
-
-            # Load persisted vector store
-            vector_db = ChromaVectorStore.load_vectorstore(
-                embeddings=embeddings,
-                persist_directory=persist_dir,
-                collection_name=collection_name
-            )
-
-            if vector_db is None:
-                logging.info("Persisted vector store is empty or corrupted.")
-                return False
-
-            # Create retriever from loaded store
-            retriever_mgr = RetrieverTool(vector_db, top_k=user_controls["TOP_K"])
-            vector_retriever = retriever_mgr.get_retriever()
-
-            # Store in session state
-            st.session_state["vector_retriever"] = vector_retriever
-            logging.info("Persisted vector store restored successfully.")
-
-            return True
-
-        except Exception as e:
-            logging.exception("Failed to load persisted vector store.")
-            return False
-
-    def clear_persisted_vectorstore(self, user_controls: dict) -> None:
-        """
-        Delete the persisted vector store from disk and clear session state.
-
-        Args:
-            user_controls: User-selected configuration.
-        """
-        try:
-            persist_dir = user_controls.get("PERSIST_DIRECTORY", "./chroma_db")
-
-            ChromaVectorStore.delete_vectorstore(persist_dir)
-
-            # Clear session state
-            st.session_state.pop("vector_retriever", None)
-            st.session_state.pop("_files_signature", None)
-
-            logging.info("Persisted vector store cleared successfully.")
-
-        except Exception as e:
-            logging.exception("Failed to clear persisted vector store.")
             raise CustomException(e, sys)
