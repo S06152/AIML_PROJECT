@@ -4,6 +4,7 @@ from src.utils.exception import CustomException
 import streamlit as st
 from src.ui.streamlit_app import StreamlitApp
 from src.graph.workflow_graph import GraphBuilder
+from src.vectorstore.chroma_store import ChromaVectorStore
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -111,6 +112,18 @@ class AGENTICRAG:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
+            # Auto-restore persisted vector store on first load
+            if "vector_retriever" not in st.session_state:
+                persist_dir = self._user_input.get("PERSIST_DIRECTORY", "./chroma_db")
+
+                if ChromaVectorStore.store_exists(persist_dir):
+                    restored = self._app.load_persisted_vectorstore(self._user_input)
+
+                    if restored:
+                        st.sidebar.success("✅ Previously indexed documents restored from disk.")
+                    else:
+                        logging.info("No valid persisted data to restore.")
+
             # Document Upload & Indexing
             uploaded_files = st.sidebar.file_uploader(
                 "📂 Upload PDF(s)",
@@ -131,6 +144,19 @@ class AGENTICRAG:
                     self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
 
                     st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
+
+            # Clear Index Button
+            if st.session_state.get("vector_retriever") is not None:
+                clear_clicked = st.sidebar.button(
+                    "🗑️ Clear Persisted Index",
+                    use_container_width=True,
+                    type="secondary"
+                )
+
+                if clear_clicked:
+                    self._app.clear_persisted_vectorstore(self._user_input)
+                    st.sidebar.info("🗑️ Persisted index cleared. Upload new documents to re-index.")
+                    st.rerun()
 
             # Build Agent Workflow Graph
             graph = self._graph.build_graph()
