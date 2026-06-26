@@ -1,29 +1,47 @@
+"""
+Agentic RAG Knowledge Assistant - FastAPI Backend Entry Point.
+
+Usage:
+    Standalone backend (for local dev):
+        python app.py
+
+    For Streamlit Cloud deployment, use streamlit_app.py instead:
+        streamlit run streamlit_app.py
+    (This auto-starts the FastAPI backend in a background thread)
+"""
+
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-from src.main import AGENTICRAG
 import warnings
+
 warnings.filterwarnings("ignore")
 
+# ─── FastAPI Application (for uvicorn) ─────────────────────────────────────────
+from src.api.fastapi_app import app as fastapi_app
+
+
 if __name__ == "__main__":
-
+    """
+    When run directly, starts the FastAPI backend server using uvicorn.
+    """
     try:
-        logging.info("APPLICATION START")
-        logging.info("Initializing Agentic RAG Knowledge Assistant with External Tool Integration(Streamlit App)")
+        import uvicorn
 
-        # Initialize Application
-        logging.info("Creating Streamlit application instance...")
-        app = AGENTICRAG()
+        logging.info("APPLICATION START - FastAPI Backend Mode")
+        logging.info("Starting Agentic RAG Knowledge Assistant FastAPI Backend...")
 
-        logging.info("Application instance created successfully | Class = %s", type(app).__name__)
+        uvicorn.run(
+            "src.api.fastapi_app:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True,
+        )
 
-        # Run Application
-        logging.info("Launching Streamlit UI...")
-        app.run()
-        
-        logging.info("Streamlit UI executed successfully.")
         logging.info("APPLICATION END")
 
     except Exception as e:
-        logging.exception("CRITICAL ERROR: Failed to launch Agentic RAG Knowledge Assistant with External Tool Integration application.")
+        logging.exception(
+            "CRITICAL ERROR: Failed to start FastAPI backend."
+        )
         raise CustomException(e, sys)
