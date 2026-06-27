@@ -101,7 +101,7 @@ async def query_documents(request: QueryRequest):
     try:
         logging.info("API: Query received: '%s'", request.question)
 
-        if not request.query.strip():
+        if not request.question.strip():
             raise HTTPException(status_code = 400, detail = "Question cannot be empty")
         
         # Build, Draw and execute graph

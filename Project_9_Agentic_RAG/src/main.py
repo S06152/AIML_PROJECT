@@ -215,7 +215,7 @@ class AGENTICRAG:
             st.markdown(user_query)
 
         response = None
-        tool_name = None
+        formatted_response = None
         # Get response from backend
         with st.chat_message("assistant"):
             with st.spinner("🔍 Searching & generating answer..."):
@@ -224,7 +224,7 @@ class AGENTICRAG:
                     
                     response = requests.post(
                         f"{FASTAPI_BASE_URL}/query",
-                        payload = {"question" : user_query}
+                        json = {"question" : user_query}
                     )
 
                     if response.status_code == 200:
@@ -234,27 +234,24 @@ class AGENTICRAG:
 
                         if tool_used:
                             formatted_response = (
-                                f"{answer}\n"
+                                f"{answer}\n\n"
                                 f"[🛠️ Tool_Used : {tool_used}]"
                             )
                         else:
-                            formatted_response = response
-    
-                    st.markdown(formatted_response)
+                            formatted_response = answer
 
-                    logging.info("Agentic RAG response generated successfully. Tool invoked: %s", tool_name or "None")
+                        st.markdown(formatted_response)
+                    else:
+                        error_detail = response.json().get("detail", "Unknown error")
+                        st.error(f"❌ Query failed: {error_detail}")
+
+                    logging.info("Agentic RAG response generated successfully.")
 
                 except Exception as e:
                     logging.exception("Query to backend failed.")
-                    return f"❌ Error: {str(e)}"
+                    st.error(f"❌ Error: {str(e)}")
 
-        if result:
-            history_content = result
-            
-            if tool_used:
-                history_content = (
-                    f"{result}\n"
-                    f"[🛠️ Tool_Used : {tool_used}]"
-                )
+        if formatted_response:
+            history_content = formatted_response
 
             st.session_state["messages"].append({"role" : "assistant", "content" : history_content})
