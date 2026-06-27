@@ -35,6 +35,14 @@ class HealthResponse(BaseModel):
 class FastAPIState:
     def __init__(self):
         self._graph_builder = GraphBuilder()
+        # Compile graph once at startup
+        self._compiled_graph = self._graph_builder.build_graph()
+        logging.info("Graph compiled once at FastAPI startup.")
+        # Cache mermaid text for frontend rendering
+        try:
+            self._graph_mermaid = self._compiled_graph.get_graph().draw_mermaid()
+        except Exception:
+            self._graph_mermaid = None
 
 app = FastAPI()
 
@@ -45,6 +53,11 @@ state = FastAPIState()
 async def health_check():
     """Health check endpoint."""
     return HealthResponse(status = "healthy")
+
+@app.get("/graph")
+async def get_graph():
+    """Return the compiled graph mermaid text for frontend rendering."""
+    return {"graph_mermaid": state._graph_mermaid}
 
 @app.post("/upload", response_model = UploadResponse)
 async def upload_documents(files: List[UploadFile], user_controls: dict):
@@ -105,12 +118,10 @@ async def query_documents(request: QueryRequest):
         if not request.question.strip():
             raise HTTPException(status_code = 400, detail = "Question cannot be empty")
         
-        # Build, Draw and execute graph
-        graph = state._graph_builder.build_graph()
-
-        state._graph_builder._display_graph(graph)
-
-        response, tool_name = state._graph_builder.execute(graph, request.question, request.user_controls)
+        # Invoke the pre-compiled graph for each query
+        response, tool_name = state._graph_builder.execute(
+            state._compiled_graph, request.question, request.user_controls
+        )
 
         logging.info("API: Query processed. Tool used: %s", tool_name or "None")
 

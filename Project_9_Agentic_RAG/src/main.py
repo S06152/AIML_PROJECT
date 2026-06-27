@@ -132,6 +132,9 @@ class AGENTICRAG:
 
                     st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
 
+            # Display compiled workflow graph in sidebar (once, before user query)
+            self._display_graph_in_sidebar()
+
             # Process user query
             if self._user_query:
                 self._run_agent_workflow(self._user_query.strip())
@@ -191,6 +194,25 @@ class AGENTICRAG:
                 st.error(f"❌ Upload error: {str(e)}")
                 logging.exception("Upload to backend failed.")
 
+    def _display_graph_in_sidebar(self) -> None:
+        """
+        Fetch the compiled workflow graph from backend and display it
+        in the Streamlit sidebar. Displays only once per session.
+        """
+        try:
+            if "graph_displayed" not in st.session_state:
+                response = requests.get(f"{FASTAPI_BASE_URL}/graph", timeout = 5)
+                if response.status_code == 200:
+                    graph_mermaid = response.json().get("graph_mermaid")
+                    if graph_mermaid:
+                        with st.sidebar:
+                            st.subheader("🔀 Workflow Graph")
+                            st.code(graph_mermaid, language = "mermaid")
+                        st.session_state["graph_displayed"] = True
+                        logging.info("Workflow graph displayed in sidebar.")
+        except Exception as e:
+            logging.warning("Unable to render workflow graph. Error: %s", str(e))
+
     def _run_agent_workflow(self, user_query: str) -> None:
         """
         Execute the Agentic RAG workflow for a user query.
@@ -242,6 +264,7 @@ class AGENTICRAG:
                             formatted_response = answer
 
                         st.markdown(formatted_response)
+
                     else:
                         error_detail = response.json().get("detail", "Unknown error")
                         st.error(f"❌ Query failed: {error_detail}")
