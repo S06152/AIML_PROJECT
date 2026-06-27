@@ -3,9 +3,11 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 import streamlit as st
 from src.ui.streamlit_app import StreamlitApp
-from src.graph.workflow_graph import GraphBuilder
+import requests
 import warnings
 warnings.filterwarnings("ignore")
+
+FASTAPI_BASE_URL = "http://localhost:8000"
 
 class AGENTICRAG:
     """
@@ -43,8 +45,6 @@ class AGENTICRAG:
             self._user_input = self._app.load_streamlit_ui()
 
             st.session_state["user_controls"] = self._user_input
-
-            self._graph = GraphBuilder()
 
             self._user_query = st.chat_input("💬 Enter your question here...")
 
@@ -128,42 +128,70 @@ class AGENTICRAG:
 
             if uploaded_files and index_clicked:
                 if self._needs_reindexing(uploaded_files):
-                    self._app.run_ingestion_pipeline(uploaded_files, self._user_input)
+                    self._run_ingestion_pipeline(uploaded_files, self._user_input)
 
                     st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
 
-            # Build Agent Workflow Graph
-            graph = self._graph.build_graph()
-
-            # Display workflow graph
-            self._display_graph(graph)
-
             # Process user query
             if self._user_query:
-                self._run_agent_workflow(self._user_query.strip(), graph)
+                self._run_agent_workflow(self._user_query.strip())
 
         except Exception as e:
             logging.exception("Error while executing the Agentic RAG workflow.")
             raise CustomException(e, sys)
 
-    def _display_graph(self, graph) -> None:
+    # RAG Ingestion Pipeline
+    def _run_ingestion_pipeline(self, uploaded_files, user_controls: dict) -> None:
         """
-        Display workflow graph in sidebar.
+        Execute the document ingestion pipeline.
+
+        Steps:
+            1. Load PDF documents.
+            2. Generate embeddings.
+            3. Create Chroma vector store.
+            4. Configure retriever.
+            5. Store retriever in session state.
+
+        Args:
+            uploaded_files: Uploaded PDF files.
+            user_controls: User-selected configuration.
         """
-        try:
-            with st.sidebar:
-                try:
-                    graph_image = graph.get_graph().draw_mermaid_png()
-                    st.image(graph_image, caption = "Agentic RAG Workflow", use_container_width = True )
+        with st.sidebar.spinner("🔎 Processing PDFs document...."):
+            logging.info("Starting document ingestion pipeline.")
 
-                except Exception:
-                    mermaid_text = graph.get_graph().draw_mermaid()
-                    st.code(mermaid_text, language = "mermaid")
+            # Step 1: Load PDFs
+            try:
+                files_data = []
+                for file in uploaded_files:
+                    file.seek(0)
+                    files_data.append(file)
+                    
+                # Send to FastAPI backend
+                response = requests.post(
+                    f"{FASTAPI_BASE_URL}/upload",
+                    files = files_data,
+                    data = user_controls
+                )
 
-        except Exception as e:
-            logging.warning("Unable to render workflow graph. Error: %s", str(e))
+                if response.status_codes == 200:
+                    result = response.json()
+                    st.success(
+                        f"✅ {result['message']} "
+                        f"({result['pages_extracted']} pages from "
+                        f"{len(result['files_processed'])} file(s))"
+                    )
 
-    def _run_agent_workflow(self, user_query: str, graph) -> None:
+                    logging.info("Documents uploaded and indexed successfully.")
+                else:
+                    error_detail = response.json().get("detail", "Unknown error")
+                    st.error(f"❌ Upload failed: {error_detail}")
+                    logging.error("Upload failed: %s", error_detail)
+
+            except Exception as e:
+                st.error(f"❌ Upload error: {str(e)}")
+                logging.exception("Upload to backend failed.")
+
+    def _run_agent_workflow(self, user_query: str) -> None:
         """
         Execute the Agentic RAG workflow for a user query.
 
@@ -188,37 +216,45 @@ class AGENTICRAG:
 
         response = None
         tool_name = None
-
+        # Get response from backend
         with st.chat_message("assistant"):
             with st.spinner("🔍 Searching & generating answer..."):
                 try:
                     logging.info("Executing Agentic RAG workflow for query: '%s'", user_query)
+                    
+                    response = requests.post(
+                        f"{FASTAPI_BASE_URL}/query",
+                        payload = {"question" : user_query}
+                    )
 
-                    response, tool_name = self._graph.execute(graph, user_query)
+                    if response.status_code == 200:
+                        result = response.json()
+                        answer = result.get("answer", "No response generated.")
+                        tool_used = result.get("tool_used")
 
-                    if tool_name:
-                        formatted_response = (
-                            f"{response}\n"
-                            f"[🛠️ Tool_Used : {tool_name}]"
-                        )
-                    else:
-                        formatted_response = response
+                        if tool_used:
+                            formatted_response = (
+                                f"{answer}\n"
+                                f"[🛠️ Tool_Used : {tool_used}]"
+                            )
+                        else:
+                            formatted_response = response
     
                     st.markdown(formatted_response)
 
                     logging.info("Agentic RAG response generated successfully. Tool invoked: %s", tool_name or "None")
 
                 except Exception as e:
-                    logging.exception("Agentic RAG workflow execution failed for query: '%s'", user_query)
-                    raise CustomException(e, sys)
+                    logging.exception("Query to backend failed.")
+                    return f"❌ Error: {str(e)}"
 
-        if response:
-            history_content = response
+        if result:
+            history_content = result
             
-            if tool_name:
+            if tool_used:
                 history_content = (
-                    f"{response}\n"
-                    f"[🛠️ Tool_Used : {tool_name}]"
+                    f"{result}\n"
+                    f"[🛠️ Tool_Used : {tool_used}]"
                 )
 
             st.session_state["messages"].append({"role" : "assistant", "content" : history_content})

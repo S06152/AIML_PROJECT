@@ -3,10 +3,6 @@ from src.utils.logger import logging
 from src.utils.exception import CustomException
 import streamlit as st
 from src.config.settings import Config
-from src.ingestion.pdf_loader import PDFLoader
-from src.embedding.embedding import EmbeddingManager
-from src.vectorstore.chroma_store import ChromaVectorStore
-from src.tools.retriever_tool import RetrieverTool
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -91,69 +87,4 @@ class StreamlitApp:
 
         except Exception as e:
             logging.exception("Failed to load Streamlit UI.")
-            raise CustomException(e, sys)
-    
-    # RAG Ingestion Pipeline
-    def run_ingestion_pipeline(self, uploaded_file, user_controls: dict) -> None:
-        """
-        Execute the document ingestion pipeline.
-
-        Steps:
-            1. Load PDF documents.
-            2. Generate embeddings.
-            3. Create Chroma vector store.
-            4. Configure retriever.
-            5. Store retriever in session state.
-
-        Args:
-            uploaded_files: Uploaded PDF files.
-            user_controls: User-selected configuration.
-        """
-        try:
-            with st.sidebar.spinner("🔎 Processing PDFs document...."):
-                logging.info("Starting document ingestion pipeline.")
-
-                all_documents = []
-
-                # Step 1: Load PDFs
-                for file in uploaded_file:
-                    try:
-                        file.seek(0)
-                        loader = PDFLoader(file, user_controls)
-                        documents = loader.load_documents()
-                        all_documents.extend(documents)
-                        logging.info("PDF loaded successfully | File=%s | Pages=%s", file.name, len(documents))
-
-                    except Exception as e:
-                        logging.error(f"Failed to load {file.name}: {e}")
-                        st.error(f"❌ Failed to load {file.name}")
-                        continue
-                st.sidebar.write("✅ PDF loaded successfully. Extracted {} pages.".format(len(all_documents)))
-                
-                # Step 2: Create Embeddings
-                embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
-                embeddings = embedding_mgr.create_embeddings()
-                logging.info("Embeddings created successfully.")
-                st.sidebar.write("✅ Embeddings generated successfully.")
-
-                # Step 3: Create Vector Store
-                vector_store_mgr = ChromaVectorStore(all_documents, embeddings)
-                vector_db = vector_store_mgr.create_vectorstore()
-                logging.info("Chroma vector store created successfully.")
-                st.sidebar.write( "✅ ChromaDB vector store created successfully.")
-
-                # Step 4: Create Retriever
-                retriever_mgr = RetrieverTool(vector_db, top_k = user_controls["TOP_K"])
-                vector_retriever = retriever_mgr.get_retriever()
-                st.sidebar.write("✅ Retriever created successfully.")
-
-                # Step 5: Store Retriever
-                st.session_state["vector_retriever"] = vector_retriever
-                logging.info("Retriever stored in session state.")
-                st.sidebar.success("✅ Documents indexed successfully.")
-
-                logging.info("Document ingestion pipeline completed successfully.")
-
-        except Exception as e:
-            logging.exception("Document ingestion pipeline failed.")
             raise CustomException(e, sys)

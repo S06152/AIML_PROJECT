@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
 from src.agents.agents import Agent
 from src.models.state import State
+import streamlit as st
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -65,7 +66,7 @@ class GraphBuilder:
             logging.exception("Error while building workflow graph.")
             raise CustomException(e, sys)
 
-    def execute(self,graph,query: str) -> tuple[str, str]:
+    def execute(self, graph, query: str) -> tuple[str, str]:
         """
         Execute the Agentic RAG workflow.
 
@@ -132,3 +133,20 @@ class GraphBuilder:
                 return msg.content
 
         return ""
+
+    def _display_graph(self, graph) -> None:
+        """
+        Display workflow graph in sidebar.
+        """
+        try:
+            with st.sidebar:
+                try:
+                    graph_image = graph.get_graph().draw_mermaid_png()
+                    st.image(graph_image, caption = "Agentic RAG Workflow", use_container_width = True )
+
+                except Exception:
+                    mermaid_text = graph.get_graph().draw_mermaid()
+                    st.code(mermaid_text, language = "mermaid")
+
+        except Exception as e:
+            logging.warning("Unable to render workflow graph. Error: %s", str(e))
