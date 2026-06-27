@@ -136,13 +136,14 @@ class Agent:
             logging.exception("Failed to initialize Agent.")
             raise CustomException(e, sys)
 
-    def _get_base_llm(self):
+    def _get_base_llm(self, user_controls: dict = None):
         """
         Create and return a base ChatGroq instance (without tools).
         """
 
         try:
-            user_controls = st.session_state.get("user_controls", {})
+            if not user_controls:
+                user_controls = st.session_state.get("user_controls", {})
             groq_api_key = user_controls.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
             model_name = user_controls.get("LLM_MODEL")
             temperature = user_controls.get("TEMPERATURE", 0.1)
@@ -165,13 +166,13 @@ class Agent:
             logging.exception("Failed to initialize base LLM.")
             raise CustomException(e, sys)
 
-    def _get_llm_with_tools(self):
+    def _get_llm_with_tools(self, user_controls: dict = None):
         """
         Create ChatGroq instance and bind tools.
         """
 
         try:
-            llm = self._get_base_llm()
+            llm = self._get_base_llm(user_controls)
 
             return llm.bind_tools(
                 self._tools,
@@ -193,7 +194,8 @@ class Agent:
 
         try:
 
-            llm_with_tools = self._get_llm_with_tools()
+            user_controls = state.get("user_controls", {})
+            llm_with_tools = self._get_llm_with_tools(user_controls)
         
             messages = state.get("messages", [])
 
@@ -218,7 +220,7 @@ class Agent:
                         "Tool-bound invocation failed (model chose direct response). "
                         "Retrying without tools."
                     )
-                    base_llm = self._get_base_llm()
+                    base_llm = self._get_base_llm(user_controls)
                     response = base_llm.invoke(final_messages)
                 else:
                     raise

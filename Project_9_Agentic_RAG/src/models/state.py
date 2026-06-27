@@ -11,7 +11,9 @@ class State(TypedDict):
         messages: Complete conversation history including
                   HumanMessage, AIMessage, and ToolMessage.
         question: Original user query.
+        user_controls: User configuration settings (LLM model, API keys, etc.)
     """
 
     messages: Annotated[list[AnyMessage], add_messages]
     question: str
+    user_controls: dict

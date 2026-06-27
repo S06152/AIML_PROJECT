@@ -66,13 +66,14 @@ class GraphBuilder:
             logging.exception("Error while building workflow graph.")
             raise CustomException(e, sys)
 
-    def execute(self, graph, query: str) -> tuple[str, str]:
+    def execute(self, graph, query: str, user_controls: dict = None) -> tuple[str, str]:
         """
         Execute the Agentic RAG workflow.
 
         Args:
             graph: Compiled LangGraph workflow.
             query (str): User query.
+            user_controls (dict): User configuration settings.
 
         Returns:
             tuple:
@@ -87,7 +88,8 @@ class GraphBuilder:
 
             initial_state = {
                 "messages": [HumanMessage(content=query)],
-                "question": query
+                "question": query,
+                "user_controls": user_controls or {}
             }
 
             final_state = graph.invoke(initial_state)
@@ -142,7 +144,7 @@ class GraphBuilder:
             with st.sidebar:
                 try:
                     graph_image = graph.get_graph().draw_mermaid_png()
-                    st.image(graph_image, caption = "Agentic RAG Workflow", use_container_width = True )
+                    st.image(graph_image, caption = "Agentic RAG Workflow", width = "stretch" )
 
                 except Exception:
                     mermaid_text = graph.get_graph().draw_mermaid()

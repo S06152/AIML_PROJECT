@@ -23,6 +23,13 @@ def _start_fastapi_server():
 
         uvicorn.run(fastapi_app, host = "0.0.0.0", port = FASTAPI_PORT, log_level = "warning")
 
+    except OSError as e:
+        if "address already in use" in str(e).lower() or getattr(e, 'errno', None) == 98:
+            logging.info("Port %d already in use. Backend likely already running.", FASTAPI_PORT)
+        else:
+            logging.exception("Error while starting FastAPI backend.")
+            raise CustomException(e, sys)
+
     except Exception as e:
         logging.exception("Error while starting FastAPI backend.")
         raise CustomException(e, sys)

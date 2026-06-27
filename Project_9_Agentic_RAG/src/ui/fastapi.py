@@ -15,6 +15,7 @@ warnings.filterwarnings("ignore")
 
 class QueryRequest(BaseModel):
     question: str
+    user_controls: dict = {}
 
 class QueryResponse(BaseModel):
     """Response model for query endpoint."""
@@ -109,7 +110,7 @@ async def query_documents(request: QueryRequest):
 
         state._graph_builder._display_graph(graph)
 
-        response, tool_name = state._graph_builder.execute(graph, request.question)
+        response, tool_name = state._graph_builder.execute(graph, request.question, request.user_controls)
 
         logging.info("API: Query processed. Tool used: %s", tool_name or "None")
 
