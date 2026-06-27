@@ -10,6 +10,7 @@ from src.embedding.embedding import EmbeddingManager
 from src.vectorstore.chroma_store import ChromaVectorStore
 from src.tools.retriever_tool import RetrieverTool
 from src.graph.workflow_graph import GraphBuilder
+import base64
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -38,11 +39,14 @@ class FastAPIState:
         # Compile graph once at startup
         self._compiled_graph = self._graph_builder.build_graph()
         logging.info("Graph compiled once at FastAPI startup.")
-        # Cache mermaid text for frontend rendering
+        # Cache graph image as base64 for frontend rendering
+        self._graph_image_b64 = None
         try:
-            self._graph_mermaid = self._compiled_graph.get_graph().draw_mermaid()
-        except Exception:
-            self._graph_mermaid = None
+            graph_png_bytes = self._compiled_graph.get_graph().draw_mermaid_png()
+            self._graph_image_b64 = base64.b64encode(graph_png_bytes).decode("utf-8")
+            logging.info("Graph PNG image generated and cached.")
+        except Exception as e:
+            logging.warning("Failed to generate graph PNG: %s", str(e))
 
 app = FastAPI()
 
@@ -56,8 +60,8 @@ async def health_check():
 
 @app.get("/graph")
 async def get_graph():
-    """Return the compiled graph mermaid text for frontend rendering."""
-    return {"graph_mermaid": state._graph_mermaid}
+    """Return the compiled graph image as base64 for frontend rendering."""
+    return {"graph_image": state._graph_image_b64}
 
 @app.post("/upload", response_model = UploadResponse)
 async def upload_documents(files: List[UploadFile], user_controls: dict):

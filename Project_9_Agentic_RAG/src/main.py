@@ -196,20 +196,22 @@ class AGENTICRAG:
 
     def _display_graph_in_sidebar(self) -> None:
         """
-        Fetch the compiled workflow graph from backend and display it
+        Fetch the compiled workflow graph image from backend and display it
         in the Streamlit sidebar. Displays only once per session.
         """
         try:
             if "graph_displayed" not in st.session_state:
                 response = requests.get(f"{FASTAPI_BASE_URL}/graph", timeout = 5)
                 if response.status_code == 200:
-                    graph_mermaid = response.json().get("graph_mermaid")
-                    if graph_mermaid:
+                    graph_image_b64 = response.json().get("graph_image")
+                    if graph_image_b64:
+                        import base64
+                        graph_image_bytes = base64.b64decode(graph_image_b64)
                         with st.sidebar:
                             st.subheader("🔀 Workflow Graph")
-                            st.code(graph_mermaid, language = "mermaid")
+                            st.image(graph_image_bytes, caption = "Agentic RAG Workflow")
                         st.session_state["graph_displayed"] = True
-                        logging.info("Workflow graph displayed in sidebar.")
+                        logging.info("Workflow graph image displayed in sidebar.")
         except Exception as e:
             logging.warning("Unable to render workflow graph. Error: %s", str(e))
 
