@@ -83,7 +83,7 @@ async def upload_documents(files: List[UploadFile], user_controls: dict):
                 continue
         
         if not all_documents:
-            raise HTTPException(status_code = 400, details = "No valid PDF documnets could be processed")
+            raise HTTPException(status_code = 400, detail = "No valid PDF documnets could be processed")
         
         # Step 2: Create Embeddings
         embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
@@ -112,7 +112,7 @@ async def upload_documents(files: List[UploadFile], user_controls: dict):
         )
     except Exception as e:
         logging.exception("Document ingestion pipeline failed.")
-        raise HTTPException(status_code = 500, details = f"Document processing failed: {str(e)}")
+        raise HTTPException(status_code = 500, detail = f"Document processing failed: {str(e)}")
 
 @app.post("/query", response_model = QueryResponse)
 async def query_documents(request: QueryRequest):

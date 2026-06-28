@@ -28,3 +28,4 @@ wikipedia
 arxiv
 bs4
 grandalf
+langsmith

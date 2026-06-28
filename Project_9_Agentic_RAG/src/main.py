@@ -8,6 +8,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 FASTAPI_BASE_URL = "http://localhost:8000"
+LANGSMITH_TRACING="true"
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY=st.secrets.get("LANGSMITH_API_KEY")
+LANGSMITH_PROJECT="Agentic_RAG"
 
 class AGENTICRAG:
     """
@@ -176,7 +180,7 @@ class AGENTICRAG:
                     data = user_controls
                 )
 
-                if response.status_codes == 200:
+                if response.status_code == 200:
                     result = response.json()
                     st.success(
                         f"✅ {result['message']} "
