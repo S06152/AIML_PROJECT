@@ -29,3 +29,4 @@ arxiv
 bs4
 grandalf
 langsmith
+python-dotenv

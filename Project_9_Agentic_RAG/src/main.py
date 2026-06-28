@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
@@ -7,11 +9,14 @@ import requests
 import warnings
 warnings.filterwarnings("ignore")
 
+load_dotenv()
+
 FASTAPI_BASE_URL = "http://localhost:8000"
-LANGSMITH_TRACING="true"
-LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
-LANGSMITH_API_KEY=st.secrets.get("LANGSMITH_API_KEY")
-LANGSMITH_PROJECT="Agentic_RAG"
+
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
+os.environ["LANGSMITH_API_KEY"] = st.secrets["LANGSMITH_API_KEY"]
+os.environ["LANGSMITH_PROJECT"] = "Agentic_RAG"
 
 class AGENTICRAG:
     """
