@@ -1,0 +1,16 @@
+langchain
+transformers
+torch
+accelerate
+sentence-transformers
+qdrant-client
+pymupdf
+fastapi
+streamlit
+uvicorn
+python-dotenv
+requests
+langchain-community
+langchain-huggingface
+langchain-openai
+python-multipart

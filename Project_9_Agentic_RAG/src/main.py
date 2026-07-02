@@ -254,11 +254,15 @@ class AGENTICRAG:
             with st.spinner("🔍 Searching & generating answer..."):
                 try:
                     logging.info("Executing Agentic RAG workflow for query: '%s'", user_query)
-                    
+
                     user_controls = st.session_state.get("user_controls", {})
                     response = requests.post(
                         f"{FASTAPI_BASE_URL}/query",
-                        json = {"question" : user_query, "user_controls" : user_controls}
+                        json = {
+                            "question" : user_query,
+
+                            "user_controls" : user_controls,
+                        }
                     )
 
                     if response.status_code == 200:

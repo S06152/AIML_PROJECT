@@ -52,6 +52,7 @@ class StreamlitApp:
 
             # Load API keys from environment
             groq_api_key = st.secrets.get("GROQ_API_KEY")
+            tavily_api_key = st.secrets.get("TAVILY_API_KEY")
             
             if not groq_api_key:
                 st.warning("⚠️ GROQ_API_KEY not found. Enter your groq API key in Streamlit secrets to enable LLM funtionality")
@@ -76,6 +77,7 @@ class StreamlitApp:
             
             # Store remaining config values for downstream use
             self._user_control["GROQ_API_KEY"] = groq_api_key
+            self._user_control["TAVILY_API_KEY"] = tavily_api_key
             self._user_control["CHUNK_SIZE"] = self._config.get_chunk_size()
             self._user_control["CHUNK_OVERLAP"] = self._config.get_chunk_overlap()
             self._user_control["TOP_K"] = self._config.get_top_k()
