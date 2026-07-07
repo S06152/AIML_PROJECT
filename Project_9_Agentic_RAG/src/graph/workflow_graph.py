@@ -5,9 +5,9 @@ from typing import Any, Optional
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import MemorySaver
 from src.agents.agents import Agent
 from src.models.state import State
-import streamlit as st
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -20,6 +20,28 @@ class GraphBuilder:
         - wikipedia_search
         - arxiv_search
         - tavily_web_search
+
+    Conversational memory:
+        The compiled graph is wired with a LangGraph checkpointer
+        (`MemorySaver`), so the `messages` state is automatically
+        persisted and reloaded per `thread_id` across calls to
+        `execute()`. This gives the agent short-term, thread-scoped
+        memory -- follow-up questions in the same session now see
+        prior turns, instead of every query starting from a blank
+        slate.
+
+        `MemorySaver` keeps this state in-process (RAM), which is the
+        right choice for a single-process demo/interview project. For
+        a production deployment running multiple workers/replicas, or
+        one that needs to survive a restart, swap it for a persistent
+        checkpointer with the same interface, e.g.:
+
+            from langgraph.checkpoint.sqlite import SqliteSaver
+            checkpointer = SqliteSaver.from_conn_string("checkpoints.db")
+
+        or a Postgres-/Redis-backed checkpointer. No other code in
+        this class needs to change -- `build_graph()` and `execute()`
+        only depend on the checkpointer interface, not the backend.
     """
 
     def __init__(self) -> None:
@@ -28,6 +50,12 @@ class GraphBuilder:
 
             self._tool_call = Agent()
             self._compiled_graph: Optional[Any] = None
+
+            # Single shared checkpointer instance for the lifetime of
+            # this GraphBuilder (and therefore of the FastAPI process).
+            # All conversation threads (one per session_id) live inside
+            # this one MemorySaver, keyed internally by thread_id.
+            self._checkpointer = MemorySaver()
 
             logging.info("GraphBuilder initialized successfully.")
 
@@ -38,6 +66,12 @@ class GraphBuilder:
     def build_graph(self):
         """
         Build and compile the LangGraph workflow.
+
+        The graph is compiled with `checkpointer=self._checkpointer`,
+        which enables LangGraph's built-in thread-scoped memory: state
+        (here, `messages`) persists between `execute()` calls that
+        share the same `thread_id`, and is isolated between calls that
+        use different `thread_id`s.
         """
 
         try:
@@ -56,9 +90,9 @@ class GraphBuilder:
             graph.add_conditional_edges("tool_calling_llm", tools_condition)
             graph.add_edge("tools", "tool_calling_llm")
 
-            self._compiled_graph = graph.compile()
+            self._compiled_graph = graph.compile(checkpointer = self._checkpointer)
 
-            logging.info("Workflow graph compiled successfully.")
+            logging.info("Workflow graph compiled successfully (with checkpointer).")
 
             return self._compiled_graph
 
@@ -66,14 +100,25 @@ class GraphBuilder:
             logging.exception("Error while building workflow graph.")
             raise CustomException(e, sys)
 
-    def execute(self, graph, query: str, user_controls: dict = None) -> tuple[str, str]:
+    def execute(
+        self,
+        graph,
+        query: str,
+        user_controls: dict = None,
+        thread_id: str = "default",
+    ) -> tuple[str, str]:
         """
-        Execute the Agentic RAG workflow.
+        Execute the Agentic RAG workflow for a single conversational turn.
 
         Args:
-            graph: Compiled LangGraph workflow.
-            query (str): User query.
+            graph: Compiled LangGraph workflow (compiled with a checkpointer).
+            query (str): User query for THIS turn only.
             user_controls (dict): User configuration settings.
+            thread_id (str): Identifies the conversation. Pass the same
+                value (e.g. your session_id) across turns of the same
+                conversation so the checkpointer can load prior history;
+                pass a different value to start a fresh conversation
+                with no memory of any other thread.
 
         Returns:
             tuple:
@@ -84,21 +129,39 @@ class GraphBuilder:
         """
 
         try:
-            logging.info("Starting workflow execution | Query = '%s'", query )
+            logging.info(
+                "Starting workflow execution | thread_id = '%s' | Query = '%s'",
+                thread_id, query,
+            )
 
-            initial_state = {
-                "messages": [HumanMessage(content=query)],
+            # NOTE: this is the key change for conversational memory.
+            # We no longer build the FULL message history here -- we only
+            # pass the NEW human message for this turn. The checkpointer
+            # (configured in build_graph) automatically loads whatever
+            # prior `messages` exist for this `thread_id` and appends this
+            # new one (via the `add_messages` reducer on State.messages),
+            # before the graph runs. On the very first turn of a new
+            # thread_id, there is no prior state, so this single message
+            # is the entire history -- behavior for new conversations is
+            # unchanged.
+            turn_input = {
+                "messages": [HumanMessage(content = query)],
                 "question": query,
                 "user_controls": user_controls or {}
             }
 
-            final_state = graph.invoke(initial_state)
-            messages = final_state.get("messages",[])
+            config = {"configurable": {"thread_id": thread_id}}
+
+            final_state = graph.invoke(turn_input, config = config)
+            messages = final_state.get("messages", [])
 
             tool_name = self._extract_tool_name(messages)
-            response = self._extract_final_response( messages)
+            response = self._extract_final_response(messages)
 
-            logging.info("Workflow completed successfully. Tool Used: %s", tool_name if tool_name else "None")
+            logging.info(
+                "Workflow completed successfully | thread_id = '%s' | Tool Used: %s",
+                thread_id, tool_name if tool_name else "None",
+            )
 
             return response, tool_name
 
@@ -110,9 +173,20 @@ class GraphBuilder:
     def _extract_tool_name(messages) -> str:
         """
         Extract tool name from workflow messages.
+
+        NOTE: with memory enabled, `messages` now contains the FULL
+        conversation history for this thread, not just this turn. We only
+        want the tool used during THIS turn, so we scan from the most
+        recent human message forward rather than from the start of the
+        whole list.
         """
 
-        for msg in messages:
+        last_human_idx = 0
+        for idx, msg in enumerate(messages):
+            if isinstance(msg, HumanMessage):
+                last_human_idx = idx
+
+        for msg in messages[last_human_idx:]:
             if(hasattr(msg, "tool_calls") and msg.tool_calls):
                 return msg.tool_calls[0].get("name", "")
 
@@ -124,7 +198,13 @@ class GraphBuilder:
     @staticmethod
     def _extract_final_response(messages) -> str:
         """
-        Extract the final AI response.
+        Extract the final AI response for the most recent turn.
+
+        Unchanged in spirit from before: walks backward from the end of
+        `messages` and returns the first AIMessage that is not itself a
+        tool call. With memory enabled this still correctly returns only
+        the latest answer, since we always want the most recent
+        non-tool-call AIMessage regardless of how much history precedes it.
         """
 
         for msg in reversed(messages):
@@ -136,19 +216,10 @@ class GraphBuilder:
 
         return ""
 
-    def _display_graph(self, graph) -> None:
-        """
-        Display workflow graph in sidebar.
-        """
-        try:
-            with st.sidebar:
-                try:
-                    graph_image = graph.get_graph().draw_mermaid_png()
-                    st.image(graph_image, caption = "Agentic RAG Workflow", width = "stretch" )
-
-                except Exception:
-                    mermaid_text = graph.get_graph().draw_mermaid()
-                    st.code(mermaid_text, language = "mermaid")
-
-        except Exception as e:
-            logging.warning("Unable to render workflow graph. Error: %s", str(e))
+    # NOTE: A `_display_graph` Streamlit-rendering method previously lived
+    # here. It was unused dead code and, more importantly, invalid: this
+    # module's `execute()` runs inside the FastAPI process, which has no
+    # Streamlit ScriptRunContext, so any `st.*` call here is unsafe. Graph
+    # visualization is already correctly handled via the `/graph` endpoint
+    # in `src/ui/fastapi.py`, which the Streamlit frontend fetches and
+    # renders for itself (see `src/main.py:_display_graph_in_sidebar`).

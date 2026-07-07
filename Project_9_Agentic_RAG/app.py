@@ -83,7 +83,13 @@ def _ensure_backend_running():
         logging.exception("Error while ensuring backend is running.")
         raise CustomException(e, sys)
 
-if __name__ == "__main__":
+def main() -> None:
+    """
+    Entry point used both when this file is run directly
+    (`streamlit run app.py`) and when imported by the root-level
+    `streamlit_app.py` wrapper (`streamlit run streamlit_app.py`, the
+    file path referenced throughout README.md / Streamlit Cloud setup).
+    """
     try:
         logging.info("Application started.")
 
@@ -103,6 +109,8 @@ if __name__ == "__main__":
         raise CustomException(e, sys)
 
 
+if __name__ == "__main__":
+    main()
 
 
 

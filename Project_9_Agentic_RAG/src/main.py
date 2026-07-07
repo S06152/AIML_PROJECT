@@ -13,10 +13,22 @@ load_dotenv()
 
 FASTAPI_BASE_URL = "http://localhost:8000"
 
-os.environ["LANGSMITH_TRACING"] = "true"
-os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
-os.environ["LANGSMITH_API_KEY"] = st.secrets["LANGSMITH_API_KEY"]
-os.environ["LANGSMITH_PROJECT"] = "Agentic_RAG"
+# Fix: LangSmith tracing is optional observability, not a hard
+# dependency -- but `st.secrets["LANGSMITH_API_KEY"]` used direct
+# dict-style indexing, which raises immediately (crashing the whole
+# app before any UI is rendered) if that key isn't present in
+# secrets.toml/.env. Every other secret in this project (GROQ_API_KEY,
+# TAVILY_API_KEY) is read with `.get(...)` for exactly this reason.
+# Only enable tracing when a key is actually configured.
+_langsmith_api_key = st.secrets.get("LANGSMITH_API_KEY")
+if _langsmith_api_key:
+    os.environ["LANGSMITH_TRACING"] = "true"
+    os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
+    os.environ["LANGSMITH_API_KEY"] = _langsmith_api_key
+    os.environ["LANGSMITH_PROJECT"] = "Agentic_RAG"
+else:
+    os.environ["LANGSMITH_TRACING"] = "false"
+    logging.info("LANGSMITH_API_KEY not configured; LangSmith tracing disabled.")
 
 class AGENTICRAG:
     """
@@ -55,6 +67,10 @@ class AGENTICRAG:
 
             st.session_state["user_controls"] = self._user_input
 
+            if "session_id" not in st.session_state:
+                import uuid
+                st.session_state["session_id"] = str(uuid.uuid4())
+            self._session_id = st.session_state["session_id"]
             self._user_query = st.chat_input("💬 Enter your question here...")
 
             logging.info("Agentic RAG application initialized successfully.")
@@ -176,13 +192,16 @@ class AGENTICRAG:
                 files_data = []
                 for file in uploaded_files:
                     file.seek(0)
-                    files_data.append(file)
-                    
+                    files_data.append(
+                        ("files", (file.name, file, file.type))
+                    )
+                upload_data = dict(user_controls)
+                upload_data["session_id"] = self._session_id
                 # Send to FastAPI backend
                 response = requests.post(
                     f"{FASTAPI_BASE_URL}/upload",
                     files = files_data,
-                    data = user_controls
+                    data = upload_data
                 )
 
                 if response.status_code == 200:
@@ -260,7 +279,7 @@ class AGENTICRAG:
                         f"{FASTAPI_BASE_URL}/query",
                         json = {
                             "question" : user_query,
-
+                            "session_id" : self._session_id,
                             "user_controls" : user_controls,
                         }
                     )
