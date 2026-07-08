@@ -86,18 +86,16 @@ curl -X POST http://localhost:8000/query \
 
 ```
 Project_9_Agentic_RAG/
-├── app.py                      # Streamlit entry point: starts the FastAPI
-│                                #   backend in a background thread, then
-│                                #   launches the Streamlit frontend
-├── streamlit_app.py            # Thin wrapper around app.py's main() --
-│                                #   the file path Streamlit Cloud / this
-│                                #   README's `streamlit run` command expect
+├── app.py                      # FastAPI backend entry point
+├── streamlit_app.py            # Streamlit frontend entry point
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
 └── src/
+    ├── api/
+    │   └── fastapi_app.py      # FastAPI routes & backend logic
     ├── ui/
-    │   ├── fastapi.py          # FastAPI routes & backend logic
-    │   └── streamlit_app.py    # Streamlit UI (sidebar config, chat, etc.)
+    │   ├── streamlit_app.py    # Legacy standalone Streamlit app
+    │   └── streamlit_frontend.py # New Streamlit frontend (API client)
     ├── agents/
     │   └── agents.py           # LLM Agent with tool selection
     ├── config/

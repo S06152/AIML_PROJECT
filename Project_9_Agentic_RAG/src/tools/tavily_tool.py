@@ -1,9 +1,9 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
+import streamlit as st
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.tools import tool
-from src.models.state import State
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -29,7 +29,7 @@ class TavilySearchTool:
         try:
             logging.info("Initializing TavilySearchTool.")
 
-            tavily_api_key = State.user_controls.get("TAVILY_API_KEY")
+            tavily_api_key = st.secrets.get("TAVILY_API_KEY")
 
             if not tavily_api_key:
                 raise ValueError( "TAVILY_API_KEY is missing.")

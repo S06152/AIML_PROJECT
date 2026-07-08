@@ -1,6 +1,7 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
+import streamlit as st
 from langchain_core.tools import tool
 import warnings
 warnings.filterwarnings("ignore")
@@ -64,21 +65,8 @@ class RetrieverTool:
         """
         Create LangChain retriever tool.
 
-        NOTE: This tool previously read the retriever from
-        `st.session_state.get("vector_retriever")`. `st.session_state` is
-        only valid inside an active Streamlit ScriptRunContext. When the
-        LangGraph workflow is executed from inside the FastAPI process
-        (as this project does), there is no such context, so that lookup
-        was invalid outside of the original single-process demo.
-
-        This version instead reads the retriever via
-        `RetrieverTool.get_active_retriever()`, which the FastAPI `/query`
-        endpoint sets for the current request (using the session-scoped
-        retriever resolved from its own SESSION_STORE). The retriever
-        object itself is intentionally kept OUT of LangGraph state/
-        `user_controls`, since the graph is now compiled with a
-        checkpointer that serializes state on every turn -- a live,
-        non-serializable retriever object would break that.
+        Returns:
+            Tool: LangChain-compatible tool.
         """
 
         @tool
@@ -105,21 +93,21 @@ class RetrieverTool:
             - Information outside uploaded documents
             """
             try:
-                retriever = RetrieverTool.get_active_retriever()
+                retriever = st.session_state.get("vector_retriever")
 
                 if retriever is None:
 
-                    logging.warning("vector_db_retriever called but no retriever is available for this request.")
+                    logging.warning("vector_db_retriever called but no retriever exists in session.")
 
                     return ("No documents have been uploaded or indexed in the current session.")
 
-                logging.info("vector_db_retriever invoked | Query = \'%s\'", query)
+                logging.info("vector_db_retriever invoked | Query = '%s'", query)
 
                 docs = retriever.invoke(query)
 
                 if not docs:
 
-                    logging.info("No matching documents found for query = \'%s\'", query)
+                    logging.info("No matching documents found for query = '%s'", query)
 
                     return ("No relevant information was found in the uploaded documents." )
 
@@ -143,28 +131,3 @@ class RetrieverTool:
                 return (f"Document retrieval failed: {str(e)}")
 
         return vector_db_retriever
-
-    # ------------------------------------------------------------------
-    # Request-scoped retriever access (replaces st.session_state usage)
-    # ------------------------------------------------------------------
-    #
-    # `agents.py` sets this immediately before invoking the LLM for a
-    # given request, using the retriever resolved by the FastAPI layer
-    # for that request's session_id. This avoids relying on Streamlit
-    # session state inside the FastAPI process, while still letting the
-    # `@tool`-decorated function above (which LangGraph calls with only
-    # `query` as an argument) access the correct retriever.
-    #
-    # This is a pragmatic, low-risk fix. It is still process-global
-    # (not safe across concurrent requests handled by separate workers);
-    # see the production-readiness notes for a fuller multi-tenant fix
-    # (e.g. injecting retrievers via LangGraph's InjectedState).
-    _active_retriever = None
-
-    @classmethod
-    def set_active_retriever(cls, retriever) -> None:
-        cls._active_retriever = retriever
-
-    @classmethod
-    def get_active_retriever(cls):
-        return cls._active_retriever

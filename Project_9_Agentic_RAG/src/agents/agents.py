@@ -1,6 +1,7 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
+import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.models.state import State
@@ -141,16 +142,9 @@ class Agent:
         """
 
         try:
-            user_controls = user_controls or {}
-
-            # Fix: `st.session_state` / `st.secrets` are not valid here.
-            # This method runs inside the FastAPI process (via the
-            # LangGraph node below), which has no Streamlit script
-            # context. The API key and model settings must come from
-            # `user_controls` (passed through the request/session) or
-            # from server-side environment variables -- never from
-            # `st.secrets`.
-            groq_api_key = user_controls.get("GROQ_API_KEY")
+            if not user_controls:
+                user_controls = st.session_state.get("user_controls", {})
+            groq_api_key = user_controls.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
             model_name = user_controls.get("LLM_MODEL")
             temperature = user_controls.get("TEMPERATURE", 0.1)
             max_tokens = user_controls.get("TOKEN", 2048)
@@ -196,46 +190,19 @@ class Agent:
             1. Reading user query.
             2. Selecting the best tool.
             3. Returning a tool call or direct answer.
-
-        Conversational memory note:
-            `state["messages"]` is no longer just this turn's single
-            HumanMessage. Once the graph is compiled with a checkpointer
-            (see GraphBuilder.build_graph), LangGraph automatically loads
-            and prepends every prior message for this thread_id before
-            this node runs. No change was needed here to support that --
-            this node already just takes whatever is in `state["messages"]`
-            and forwards it to the LLM, which is exactly the behavior
-            multi-turn memory needs.
-
-            IMPORTANT: with a checkpointer enabled, LangGraph serializes
-            the full state (including `user_controls`) on every turn so
-            it can persist/reload it by thread_id. That means
-            `user_controls` must only ever contain plain, serializable
-            values (str/int/float/bool/None) -- never a live object like
-            a vector store retriever. Retriever *availability* is read
-            here as a plain boolean (`_has_vector_retriever`); the actual
-            retriever object is read from `RetrieverTool`, which the
-            FastAPI layer sets directly (outside of graph state) right
-            before invoking the graph for this request.
         """
 
         try:
 
             user_controls = state.get("user_controls", {})
             llm_with_tools = self._get_llm_with_tools(user_controls)
-
+        
             messages = state.get("messages", [])
 
             if not messages:
                 messages = [HumanMessage(content = state["question"])]
 
-            # Fix: only a plain boolean flag travels through graph state
-            # now. The actual retriever object is fetched from
-            # RetrieverTool (set by the FastAPI layer for this request),
-            # never stored in `user_controls`/state.
-            has_retriever = bool(user_controls.get("_has_vector_retriever"))
-
-            if has_retriever:
+            if st.session_state.get("vector_retriever") is not None:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_AVAILABLE
             else:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_UNAVAILABLE
