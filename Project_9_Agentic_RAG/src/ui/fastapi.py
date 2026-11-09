@@ -1,140 +1,177 @@
-import sys
-from src.utils.logger import logging
-from src.utils.exception import CustomException
-from fastapi import FastAPI, UploadFile, HTTPException
-from typing import List, Optional
-from pydantic import BaseModel
-import streamlit as st
-from src.ingestion.pdf_loader import PDFLoader
-from src.embedding.embedding import EmbeddingManager
-from src.vectorstore.chroma_store import ChromaVectorStore
-from src.tools.retriever_tool import RetrieverTool
-from src.graph.workflow_graph import GraphBuilder
 import base64
-import warnings
-warnings.filterwarnings("ignore")
+import io
+import json
+import os
+import threading
+from dotenv import load_dotenv
+
+load_dotenv()  # Load backend-owned secrets from .env when running locally.
+import uuid
+from typing import Dict, List, Optional
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+
+from src.agents.agents import Agent
+from src.embedding.embedding import EmbeddingManager
+from src.graph.workflow_graph import GraphBuilder
+from src.ingestion.pdf_loader import PDFLoader
+from src.tools.retriever_tool import RetrieverTool
+from src.utils.logger import logging
+from src.vectorstore.chroma_store import ChromaVectorStore
+
 
 class QueryRequest(BaseModel):
-    question: str
-    user_controls: dict = {}
+    question: str = Field(min_length=1, max_length=10000)
+    workspace_id: str = Field(min_length=1, max_length=128)
+    user_controls: dict = Field(default_factory=dict)
+
 
 class QueryResponse(BaseModel):
-    """Response model for query endpoint."""
     answer: str
     tool_used: Optional[str] = None
 
+
 class UploadResponse(BaseModel):
-    """Response model for upload endpoint."""
     message: str
-    pages_extracted: int
+    pages_extracted: int  # Kept for compatibility; currently counts extracted chunks.
     files_processed: List[str]
+    workspace_id: str
+
 
 class HealthResponse(BaseModel):
-    """Response model for health check."""
     status: str
 
-class FastAPIState:
+
+class BackendServices:
+    """Backend-owned runtime resources. No Streamlit state is used here.
+
+    The in-memory registry is suitable for a single FastAPI process/local setup.
+    For multi-worker or multi-replica production, replace it with persistent
+    vector storage and resolve the retriever by workspace_id on each request.
+    """
+
     def __init__(self):
-        self._graph_builder = GraphBuilder()
-        # Compile graph once at startup
-        self._compiled_graph = self._graph_builder.build_graph()
-        logging.info("Graph compiled once at FastAPI startup.")
-        # Cache graph image as base64 for frontend rendering
+        self._retrievers: Dict[str, object] = {}
+        self._lock = threading.RLock()
         self._graph_image_b64 = None
-        try:
-            graph_png_bytes = self._compiled_graph.get_graph().draw_mermaid_png()
-            self._graph_image_b64 = base64.b64encode(graph_png_bytes).decode("utf-8")
-            logging.info("Graph PNG image generated and cached.")
-        except Exception as e:
-            logging.warning("Failed to generate graph PNG: %s", str(e))
 
-app = FastAPI()
+    def set_retriever(self, workspace_id: str, retriever) -> None:
+        with self._lock:
+            self._retrievers[workspace_id] = retriever
 
-state = FastAPIState()
+    def get_retriever(self, workspace_id: str):
+        with self._lock:
+            return self._retrievers.get(workspace_id)
 
-# Endpoints
-@app.get("/health", response_model = HealthResponse)
+    def graph_image(self):
+        if self._graph_image_b64 is None:
+            try:
+                graph = GraphBuilder(retriever=None).build_graph()
+                png = graph.get_graph().draw_mermaid_png()
+                self._graph_image_b64 = base64.b64encode(png).decode("utf-8")
+            except Exception:
+                logging.exception("Unable to generate workflow graph image")
+        return self._graph_image_b64
+
+
+app = FastAPI(title="Agentic RAG API", version="1.0.0")
+services = BackendServices()
+
+
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint."""
-    return HealthResponse(status = "healthy")
+    return HealthResponse(status="healthy")
+
 
 @app.get("/graph")
 async def get_graph():
-    """Return the compiled graph image as base64 for frontend rendering."""
-    return {"graph_image": state._graph_image_b64}
+    return {"graph_image": services.graph_image()}
 
-@app.post("/upload", response_model = UploadResponse)
-async def upload_documents(files: List[UploadFile], user_controls: dict):
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload_documents(
+    files: List[UploadFile] = File(...),
+    workspace_id: str = Form(...),
+    user_controls: str = Form("{}"),
+):
+    """Ingest PDFs for one workspace and register its retriever in backend memory."""
     try:
+        controls = json.loads(user_controls)
+        if not isinstance(controls, dict):
+            raise HTTPException(status_code=400, detail="user_controls must be a JSON object")
+
+        required = ("EMBEDDING_MODELS", "TOP_K", "CHUNK_SIZE", "CHUNK_OVERLAP", "CAPTION_MODEL")
+        missing = [key for key in required if key not in controls]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Missing settings: {', '.join(missing)}")
+
         all_documents = []
         processed_files = []
-
-        # Step 1: Load PDFs
-        for file in files:
-            try:
-                loader = PDFLoader(file, user_controls)
-                documents = loader.load_documents()
-                all_documents.extend(documents)
-                processed_files.append(file.filename)
-                logging.info("PDF loaded successfully | File=%s | Pages=%s", file.name, len(documents))
-            except Exception as e:
-                logging.error(f"Failed to load {file.name}: {e}")
-                st.error(f"❌ Failed to load {file.name}")
+        for upload in files:
+            filename = upload.filename or "uploaded.pdf"
+            content_type = upload.content_type or ""
+            if content_type != "application/pdf" and not filename.lower().endswith(".pdf"):
+                logging.warning("Rejected non-PDF upload: %s", filename)
                 continue
-        
+
+            raw = await upload.read()
+            if not raw:
+                continue
+
+            # PDFLoader is kept independent of FastAPI and Streamlit. BytesIO
+            # provides the synchronous file-like interface it expects.
+            file_obj = io.BytesIO(raw)
+            file_obj.content_type = "application/pdf"
+            file_obj.filename = filename
+            loader = PDFLoader(file_obj, controls)
+            docs = loader.load_documents()
+            all_documents.extend(docs)
+            processed_files.append(filename)
+
         if not all_documents:
-            raise HTTPException(status_code = 400, detail = "No valid PDF documnets could be processed")
-        
-        # Step 2: Create Embeddings
-        embedding_mgr = EmbeddingManager(user_controls["EMBEDDING_MODELS"])
-        embeddings = embedding_mgr.create_embeddings()
-        logging.info("Embeddings created successfully.")
+            raise HTTPException(status_code=400, detail="No valid PDF documents could be processed")
 
-        # Step 3: Create Vector Store
-        vector_store_mgr = ChromaVectorStore(all_documents, embeddings)
-        vector_db = vector_store_mgr.create_vectorstore()
-        logging.info("Chroma vector store created successfully.")
+        embeddings = EmbeddingManager(controls["EMBEDDING_MODELS"]).create_embeddings()
+        vector_db = ChromaVectorStore(all_documents, embeddings).create_vectorstore()
+        retriever = RetrieverTool(vector_db, top_k=int(controls["TOP_K"])).get_retriever()
+        services.set_retriever(workspace_id, retriever)
 
-        # Step 4: Create Retriever
-        retriever_mgr = RetrieverTool(vector_db, top_k = user_controls["TOP_K"])
-        vector_retriever = retriever_mgr.get_retriever()
-
-        # Step 5: Store Retriever
-        st.session_state["vector_retriever"] = vector_retriever
-        logging.info("Retriever stored in session state.")
-
-        logging.info("Document ingestion pipeline completed successfully.")
-
+        logging.info("Indexed %d chunks for workspace %s", len(all_documents), workspace_id)
         return UploadResponse(
-            message = "Documents indexed successfully.",
-            pages_extracted = len(all_documents),
-            files_processed = processed_files
+            message="Documents indexed successfully.",
+            pages_extracted=len(all_documents),
+            files_processed=processed_files,
+            workspace_id=workspace_id,
         )
-    except Exception as e:
-        logging.exception("Document ingestion pipeline failed.")
-        raise HTTPException(status_code = 500, detail = f"Document processing failed: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.exception("Document ingestion pipeline failed")
+        raise HTTPException(status_code=500, detail="Document processing failed") from exc
+    finally:
+        for upload in files:
+            await upload.close()
 
-@app.post("/query", response_model = QueryResponse)
+
+@app.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
     try:
-        logging.info("API: Query received: '%s'", request.question)
+        question = request.question.strip()
+        if not question:
+            raise HTTPException(status_code=400, detail="Question cannot be empty")
+        if not os.getenv("GROQ_API_KEY"):
+            raise HTTPException(status_code=503, detail="LLM provider is not configured on the server")
 
-        if not request.question.strip():
-            raise HTTPException(status_code = 400, detail = "Question cannot be empty")
-        
-        # Invoke the pre-compiled graph for each query
-        response, tool_name = state._graph_builder.execute(
-            state._compiled_graph, request.question, request.user_controls
-        )
-
-        logging.info("API: Query processed. Tool used: %s", tool_name or "None")
-
-        return QueryResponse(
-            answer = response if response else "No response generated.",
-            tool_used = tool_name if tool_name else None
-        )
-    
-    except Exception as e:
-        logging.exception("API: Query endpoint failed.")
-        raise HTTPException(status_code = 500, detail = f"Query processing failed: {str(e)}")
-
+        retriever = services.get_retriever(request.workspace_id)
+        # Build a request/workspace-scoped graph so the retriever is injected
+        # into the tool closure. No global Streamlit session is consulted.
+        graph_builder = GraphBuilder(retriever=retriever)
+        graph = graph_builder.build_graph()
+        answer, tool_name = graph_builder.execute(graph, question, request.user_controls)
+        return QueryResponse(answer=answer or "No response generated.", tool_used=tool_name or None)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.exception("Query endpoint failed")
+        raise HTTPException(status_code=500, detail="Query processing failed") from exc

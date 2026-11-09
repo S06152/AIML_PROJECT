@@ -1,3 +1,4 @@
+import os
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
@@ -29,10 +30,13 @@ class TavilySearchTool:
         try:
             logging.info("Initializing TavilySearchTool.")
 
-            tavily_api_key = st.secrets.get("TAVILY_API_KEY")
+            tavily_api_key = os.getenv("TAVILY_API_KEY")
 
             if not tavily_api_key:
-                raise ValueError( "TAVILY_API_KEY is missing.")
+                raise ValueError(
+                    "TAVILY_API_KEY is missing. Configure it in the "
+                    "FastAPI backend environment."
+                )
 
             self._tavily_tool = TavilySearchResults(
                 tavily_api_key = tavily_api_key,
@@ -78,9 +82,14 @@ class TavilySearchTool:
             - General encyclopedia-style knowledge
             """
             try:
-                logging.info("tavily_web_search invoked | Query = '%s'", query)
+                if not query or not query.strip():
+                    return "Please provide a non-empty search query."
 
-                results = tavily.invoke({"query": query})
+                logging.info(
+                    "tavily_web_search invoked | Query = '%s'", query
+                )
+
+                results = tavily.invoke({"query": query.strip()})
 
                 if not results:
                     logging.warning("No Tavily results found for query = '%s'", query)

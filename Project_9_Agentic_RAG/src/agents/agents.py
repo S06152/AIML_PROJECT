@@ -1,7 +1,7 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-import streamlit as st
+import os
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.models.state import State
@@ -124,11 +124,12 @@ class Agent:
         - Producing tool calls or direct responses
     """
 
-    def __init__(self) -> None:
+    def __init__(self, retriever=None) -> None:
         try:
             logging.info("Initializing Agent.")
 
-            self._tools = ToolRegistry.get_tools()
+            self._retriever = retriever
+            self._tools = ToolRegistry.get_tools(retriever)
 
             logging.info("Agent initialized successfully.")
 
@@ -142,9 +143,9 @@ class Agent:
         """
 
         try:
-            if not user_controls:
-                user_controls = st.session_state.get("user_controls", {})
-            groq_api_key = user_controls.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+            user_controls = user_controls or {}
+            # Secrets are owned by the backend environment, never supplied by the UI.
+            groq_api_key = os.getenv("GROQ_API_KEY")
             model_name = user_controls.get("LLM_MODEL")
             temperature = user_controls.get("TEMPERATURE", 0.1)
             max_tokens = user_controls.get("TOKEN", 2048)
@@ -202,7 +203,7 @@ class Agent:
             if not messages:
                 messages = [HumanMessage(content = state["question"])]
 
-            if st.session_state.get("vector_retriever") is not None:
+            if self._retriever is not None:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_AVAILABLE
             else:
                 system_prompt = SYSTEM_PROMPT + DOCUMENT_CONTEXT_UNAVAILABLE

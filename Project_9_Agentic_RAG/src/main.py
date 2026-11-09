@@ -1,4 +1,6 @@
 import os
+import uuid
+import json
 from dotenv import load_dotenv
 import sys
 from src.utils.logger import logging
@@ -54,6 +56,8 @@ class AGENTICRAG:
             self._user_input = self._app.load_streamlit_ui()
 
             st.session_state["user_controls"] = self._user_input
+            if "workspace_id" not in st.session_state:
+                st.session_state["workspace_id"] = str(uuid.uuid4())
 
             self._user_query = st.chat_input("💬 Enter your question here...")
 
@@ -174,15 +178,23 @@ class AGENTICRAG:
             # Step 1: Load PDFs
             try:
                 files_data = []
-                for file in uploaded_files:
-                    file.seek(0)
-                    files_data.append(file)
-                    
-                # Send to FastAPI backend
+                for uploaded_file in uploaded_files:
+                    uploaded_file.seek(0)
+                    files_data.append((
+                        "files",
+                        (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")
+                    ))
+
+                # FastAPI receives ordinary multipart form data. The workspace
+                # identifier is a frontend routing key, not an authorization token.
                 response = requests.post(
                     f"{FASTAPI_BASE_URL}/upload",
-                    files = files_data,
-                    data = user_controls
+                    files=files_data,
+                    data={
+                        "workspace_id": st.session_state["workspace_id"],
+                        "user_controls": json.dumps(user_controls),
+                    },
+                    timeout=600,
                 )
 
                 if response.status_code == 200:
@@ -258,7 +270,12 @@ class AGENTICRAG:
                     user_controls = st.session_state.get("user_controls", {})
                     response = requests.post(
                         f"{FASTAPI_BASE_URL}/query",
-                        json = {"question" : user_query, "user_controls" : user_controls}
+                        json={
+                            "question": user_query,
+                            "workspace_id": st.session_state["workspace_id"],
+                            "user_controls": user_controls,
+                        },
+                        timeout=180,
                     )
 
                     if response.status_code == 200:

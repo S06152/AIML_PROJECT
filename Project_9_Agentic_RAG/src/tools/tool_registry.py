@@ -25,7 +25,7 @@ class ToolRegistry:
     """
 
     @staticmethod
-    def get_tools():
+    def get_tools(retriever=None):
         """
         Return all tools available to the Agentic RAG agent.
 
@@ -44,7 +44,7 @@ class ToolRegistry:
         logging.info( "Loading Agentic RAG tool registry.")
 
         tools = [
-            RetrieverTool.get_tool(),
+            RetrieverTool.get_tool(retriever),
             WikiTool().get_tool(),
             ArxivTool().get_tool(),
             TavilySearchTool().get_tool()

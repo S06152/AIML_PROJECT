@@ -7,7 +7,6 @@ from langgraph.graph import StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
 from src.agents.agents import Agent
 from src.models.state import State
-import streamlit as st
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -22,11 +21,11 @@ class GraphBuilder:
         - tavily_web_search
     """
 
-    def __init__(self) -> None:
+    def __init__(self, retriever=None) -> None:
         try:
             logging.info("Initializing GraphBuilder.")
 
-            self._tool_call = Agent()
+            self._tool_call = Agent(retriever=retriever)
             self._compiled_graph: Optional[Any] = None
 
             logging.info("GraphBuilder initialized successfully.")
@@ -135,20 +134,3 @@ class GraphBuilder:
                 return msg.content
 
         return ""
-
-    def _display_graph(self, graph) -> None:
-        """
-        Display workflow graph in sidebar.
-        """
-        try:
-            with st.sidebar:
-                try:
-                    graph_image = graph.get_graph().draw_mermaid_png()
-                    st.image(graph_image, caption = "Agentic RAG Workflow", width = "stretch" )
-
-                except Exception:
-                    mermaid_text = graph.get_graph().draw_mermaid()
-                    st.code(mermaid_text, language = "mermaid")
-
-        except Exception as e:
-            logging.warning("Unable to render workflow graph. Error: %s", str(e))

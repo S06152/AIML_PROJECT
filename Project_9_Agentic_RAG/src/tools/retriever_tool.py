@@ -1,7 +1,6 @@
 import sys
 from src.utils.logger import logging
 from src.utils.exception import CustomException
-import streamlit as st
 from langchain_core.tools import tool
 import warnings
 warnings.filterwarnings("ignore")
@@ -16,7 +15,7 @@ class RetrieverTool:
         - Expose a LangChain tool for tool-calling agents.
     """
 
-    def __init__(self, vector_store = None, top_k: int = 5) -> None:
+    def __init__(self, vector_store=None, top_k: int = 5):
         """
         Initialize RetrieverTool.
 
@@ -43,6 +42,8 @@ class RetrieverTool:
             VectorStoreRetriever
         """
         try:
+            if self.vector_store is None:
+                return None
             if self._retriever is None:
 
                 logging.info("Creating VectorStoreRetriever | ""search_type=similarity | top_k = %s", self.top_k)
@@ -61,7 +62,7 @@ class RetrieverTool:
             raise CustomException(e, sys)
 
     @staticmethod
-    def get_tool():
+    def get_tool(retriever=None):
         """
         Create LangChain retriever tool.
 
@@ -92,24 +93,14 @@ class RetrieverTool:
             - Academic paper search
             - Information outside uploaded documents
             """
+
             try:
-                retriever = st.session_state.get("vector_retriever")
-
-                if retriever is None:
-
-                    logging.warning("vector_db_retriever called but no retriever exists in session.")
-
-                    return ("No documents have been uploaded or indexed in the current session.")
-
-                logging.info("vector_db_retriever invoked | Query = '%s'", query)
 
                 docs = retriever.invoke(query)
 
                 if not docs:
 
-                    logging.info("No matching documents found for query = '%s'", query)
-
-                    return ("No relevant information was found in the uploaded documents." )
+                    return "No relevant information was found in the uploaded documents."
 
                 formatted_docs = []
 
