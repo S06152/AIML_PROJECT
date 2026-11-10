@@ -26,7 +26,7 @@ class QueryRewriter:
             logging.exception("QueryRewriter initialization failed.")
             raise CustomException(e, sys) from e
 
-    def rewrite(self, query: str) -> list[str]:
+    def rewrite(self, query: str) -> str:
         """
         Generate alternative search queries.
 
@@ -58,7 +58,7 @@ class QueryRewriter:
 
             response = query_expansion_chain.invoke({"query": query})
 
-            return response
+            return response.strip()
 
         except Exception:
             logging.exception(

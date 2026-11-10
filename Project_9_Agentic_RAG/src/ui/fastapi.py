@@ -206,7 +206,7 @@ async def query_documents(request: QueryRequest):
         return QueryResponse(
             answer=answer or "No response generated.",
             tool_used=tool_name or None,
-            rewritten_queries=enhanced_query
+            rewritten_queries=[enhanced_query]
         )
     except HTTPException:
         raise
