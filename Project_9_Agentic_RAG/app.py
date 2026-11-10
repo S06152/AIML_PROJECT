@@ -4,7 +4,7 @@ import threading
 import warnings
 import requests
 import uvicorn
-from src.ui.fastapi import app as fastapi_app
+from src.api.fastapi import app as fastapi_app
 from src.main import AGENTICRAG
 from src.utils.exception import CustomException
 from src.utils.logger import logging
