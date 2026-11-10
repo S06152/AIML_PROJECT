@@ -129,7 +129,11 @@ async def upload_documents(
             # PDFLoader is kept independent of FastAPI and Streamlit. BytesIO
             # provides the synchronous file-like interface it expects.
             file_obj = io.BytesIO(raw)
+
+            # Add attributes expected by PDFLoader
+            file_obj.type = "application/pdf"
             file_obj.content_type = "application/pdf"
+            file_obj.name = filename
             file_obj.filename = filename
             loader = PDFLoader(file_obj, controls)
             docs = loader.load_documents()
