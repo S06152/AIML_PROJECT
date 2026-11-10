@@ -20,7 +20,7 @@ from src.tools.retriever_tool import RetrieverTool
 from src.vectorstore.query_rewriter import QueryRewriter
 from src.utils.logger import logging
 from src.vectorstore.chroma_store import ChromaVectorStore
-from src.vectorstore.Sparse_store import SparseVectorStore
+from src.vectorstore.sparse_store import SparseVectorStore
 from langchain_classic.retrievers import EnsembleRetriever
 from src.vectorstore.reranker import DocumentReranker
 from src.vectorstore.reranking_retriever import RerankingRetriever
