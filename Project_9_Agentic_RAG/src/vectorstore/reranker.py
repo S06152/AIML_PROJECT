@@ -37,6 +37,13 @@ class DocumentReranker:
         if not documents:
             return []
 
+        print("\n========== 3. RETRIEVED DOCUMENTS (BEFORE RERANKING) ==========")
+
+        for i, doc in enumerate(documents, 1):
+            print(f"\nDocument {i}:")
+            print(doc.page_content)
+            print("Metadata:", doc.metadata)
+
         # Create query-document pairs
         pairs = [
             (query, doc.page_content)
@@ -61,6 +68,14 @@ class DocumentReranker:
             doc.metadata["rerank_score"] = float(score)
 
             final_documents.append(doc)
+        
+        print("\n========== 4. RERANKED DOCUMENTS (AFTER RERANKING) ==========")
+
+        for i, doc in enumerate(final_documents, 1):
+            print(f"\nDocument {i}:")
+            print("Rerank Score:", doc.metadata.get("rerank_score"))
+            print(doc.page_content)
+            print("Metadata:", doc.metadata)
 
         logging.info(
             "Reranking completed: %d candidates -> %d documents",

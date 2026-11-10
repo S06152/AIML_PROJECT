@@ -206,6 +206,13 @@ async def query_documents(request: QueryRequest):
 
         rewriter = QueryRewriter(request.user_controls)
         enhanced_query = rewriter.rewrite(question)
+        print("\n========== RAG PIPELINE DEBUG ==========")
+
+        print("\n1. ORIGINAL USER QUERY:")
+        print(question)
+
+        print("\n2. ENHANCED QUERY:")
+        print(enhanced_query)
 
         retriever = services.get_retriever(request.workspace_id)
         # Build a request/workspace-scoped graph so the retriever is injected
@@ -217,11 +224,18 @@ async def query_documents(request: QueryRequest):
             query=enhanced_query,
             user_controls=request.user_controls
         )
+
+        print("\n5. FINAL RESPONSE:")
+        print(answer)
+        
         return QueryResponse(
             answer=answer or "No response generated.",
             tool_used=tool_name or None,
             rewritten_queries=[enhanced_query]
         )
+    
+        
+
     except HTTPException:
         raise
     except Exception as exc:
