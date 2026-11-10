@@ -178,8 +178,18 @@ async def upload_documents(
     except HTTPException:
         raise
     except Exception as exc:
-        logging.exception("Document ingestion pipeline failed")
-        raise HTTPException(status_code=500, detail="Document processing failed") from exc
+        logging.exception(
+            "Document ingestion failed: %s",
+            str(exc)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Document processing failed: {type(exc).__name__}: {str(exc)}"
+        ) from exc
+    
+    
+
     finally:
         for upload in files:
             await upload.close()
