@@ -177,3 +177,16 @@ class Config:
         except Exception as e:
             logging.exception("Error fetching CAPTION_MODEL.")
             raise CustomException(e, sys)
+    
+    def get_reranker_model(self) -> str:
+        """
+        Returns the embedding model name used for vectorization.
+        """
+        try:
+            value = self.config["DEFAULT"].get("RERANKER_MODEL")
+            logging.debug(f"RERANKER_MODEL fetched: {value}")
+            return value
+
+        except Exception as e:
+            logging.exception("Error fetching RERANKER_MODEL.")
+            raise CustomException(e, sys)

@@ -5,7 +5,7 @@ import os
 import threading
 from dotenv import load_dotenv
 
-load_dotenv()  # Load backend-owned secrets from .env when running locally.
+load_dotenv()
 import uuid
 from typing import Dict, List, Optional
 
@@ -17,8 +17,14 @@ from src.embedding.embedding import EmbeddingManager
 from src.graph.workflow_graph import GraphBuilder
 from src.ingestion.pdf_loader import PDFLoader
 from src.tools.retriever_tool import RetrieverTool
+from src.vectorstore.query_rewriter import QueryRewriter
 from src.utils.logger import logging
 from src.vectorstore.chroma_store import ChromaVectorStore
+from src.vectorstore.Sparse_store import SparseVectorStore
+from langchain_classic.retrievers import EnsembleRetriever
+from src.vectorstore.reranker import DocumentReranker
+from src.vectorstore.reranking_retriever import RerankingRetriever
+
 
 
 class QueryRequest(BaseModel):
@@ -30,11 +36,12 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     tool_used: Optional[str] = None
+    rewritten_queries: List[str] = Field(default_factory=list)
 
 
 class UploadResponse(BaseModel):
     message: str
-    pages_extracted: int  # Kept for compatibility; currently counts extracted chunks.
+    pages_extracted: int
     files_processed: List[str]
     workspace_id: str
 
@@ -133,9 +140,29 @@ async def upload_documents(
             raise HTTPException(status_code=400, detail="No valid PDF documents could be processed")
 
         embeddings = EmbeddingManager(controls["EMBEDDING_MODELS"]).create_embeddings()
+        # Reranker model
+        reranker_model = controls.get("RERANKER_MODEL")
+         
         vector_db = ChromaVectorStore(all_documents, embeddings).create_vectorstore()
-        retriever = RetrieverTool(vector_db, top_k=int(controls["TOP_K"])).get_retriever()
-        services.set_retriever(workspace_id, retriever)
+        dense_retriever = RetrieverTool(vector_db, top_k=int(controls["TOP_K"])).get_retriever()
+        sparse_retriever = SparseVectorStore(all_documents, top_k=int(controls["TOP_K"])).create_Sparsevectorstore()
+        ensemble_retriever = EnsembleRetriever(
+            retrievers=[dense_retriever, sparse_retriever],
+            weights=[0.7, 0.3]
+        )
+
+        # Step 7: Initialize Cross-Encoder reranker
+        reranker = DocumentReranker(
+            model_name=reranker_model,
+            top_k=int(controls["TOP_K"])
+        )
+
+        final_retriever = RerankingRetriever(
+        base_retriever=ensemble_retriever,
+        reranker=reranker,
+        candidate_k=int(controls["TOP_K"])
+    )
+        services.set_retriever(workspace_id, final_retriever)
 
         logging.info("Indexed %d chunks for workspace %s", len(all_documents), workspace_id)
         return UploadResponse(
@@ -163,13 +190,24 @@ async def query_documents(request: QueryRequest):
         if not os.getenv("GROQ_API_KEY"):
             raise HTTPException(status_code=503, detail="LLM provider is not configured on the server")
 
+        rewriter = QueryRewriter(request.user_controls)
+        enhanced_query = rewriter.rewrite(question)
+
         retriever = services.get_retriever(request.workspace_id)
         # Build a request/workspace-scoped graph so the retriever is injected
         # into the tool closure. No global Streamlit session is consulted.
         graph_builder = GraphBuilder(retriever=retriever)
         graph = graph_builder.build_graph()
-        answer, tool_name = graph_builder.execute(graph, question, request.user_controls)
-        return QueryResponse(answer=answer or "No response generated.", tool_used=tool_name or None)
+        answer, tool_name = graph_builder.execute(
+            graph=graph,
+            query=enhanced_query,
+            user_controls=request.user_controls
+        )
+        return QueryResponse(
+            answer=answer or "No response generated.",
+            tool_used=tool_name or None,
+            rewritten_queries=enhanced_query
+        )
     except HTTPException:
         raise
     except Exception as exc:

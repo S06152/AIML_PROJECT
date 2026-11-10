@@ -30,3 +30,5 @@ bs4
 grandalf
 langsmith
 python-dotenv
+rank-bm25 
+langchain-classic

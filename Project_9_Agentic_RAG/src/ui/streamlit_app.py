@@ -81,6 +81,7 @@ class StreamlitApp:
             self._user_control["TOP_K"] = self._config.get_top_k()
             self._user_control["EMBEDDING_MODELS"] = self._config.get_embedding_model()
             self._user_control["CAPTION_MODEL"] = self._config.get_caption_model()
+            self._user_control["RERANKER_MODEL"] = self._config.get_reranker_model()
 
             logging.info("Streamlit UI loaded  successfully.")
             return self._user_control
