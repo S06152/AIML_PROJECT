@@ -115,7 +115,7 @@ async def upload_documents(
         reranker_model = controls.get("RERANKER_MODEL")
         vector_db = ChromaVectorStore(all_documents, embeddings).create_vectorstore()
         dense_retriever = RetrieverTool(vector_db, top_k = int(controls["TOP_K"])).get_retriever()
-        sparse_retriever = SparseVectorStore(all_documents, top_k = int(controls["TOP_K"])).create_Sparsevectorstore()
+        sparse_retriever = SparseVectorStore(all_documents, top_k = int(controls["TOP_K"])).create_sparse_retriever()
         ensemble_retriever = EnsembleRetriever(
             retrievers = [dense_retriever, sparse_retriever],
             weights = [0.7, 0.3]
