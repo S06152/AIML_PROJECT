@@ -15,21 +15,24 @@ load_dotenv()
 
 FASTAPI_BASE_URL = "http://localhost:8000"
 
+# LangSmith Configuration
 os.environ["LANGSMITH_TRACING"] = "true"
 os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGSMITH_API_KEY"] = st.secrets["LANGSMITH_API_KEY"]
 os.environ["LANGSMITH_PROJECT"] = "Agentic_RAG"
 
+# Main Agentic RAG Application
 class AGENTICRAG:
     """
     Top-level orchestrator for the Agentic RAG application.
 
     Responsibilities:
         - Initialize the Streamlit user interface.
-        - Capture and manage user configuration settings.
-        - Coordinate document ingestion and indexing workflows.
-        - Execute Agentic RAG query processing using LangGraph.
-        - Manage chat interactions, tool invocation, and response rendering.
+        - Capture user configuration settings.
+        - Manage document uploads and indexing.
+        - Communicate with the FastAPI backend.
+        - Execute Agentic RAG workflows using LangGraph.
+        - Manage chat history and render responses.
 
     Usage:
         app = AGENTICRAG()
@@ -38,13 +41,8 @@ class AGENTICRAG:
 
     def __init__(self) -> None:
         """
-        Initialize the Agentic RAG application components.
-
-        This includes:
-            - Loading the Streamlit interface.
-            - Capturing user configuration settings.
-            - Initializing the workflow graph builder.
-            - Preparing the chat input interface.
+        Initialize the Agentic RAG application.
+        Initializes the Streamlit interface, user controls, workspace identifier, and chat input.
 
         Raises:
             CustomException: If initialization fails.
@@ -52,13 +50,18 @@ class AGENTICRAG:
         try:
             logging.info("Initializing Agentic RAG application.")
 
+            # Initialize Streamlit UI
             self._app = StreamlitApp()
             self._user_input = self._app.load_streamlit_ui()
 
+            # Store user configuration
             st.session_state["user_controls"] = self._user_input
+
+            # Generate a unique workspace ID
             if "workspace_id" not in st.session_state:
                 st.session_state["workspace_id"] = str(uuid.uuid4())
 
+            # Capture user query
             self._user_query = st.chat_input("💬 Enter your question here...")
 
             logging.info("Agentic RAG application initialized successfully.")
@@ -67,19 +70,26 @@ class AGENTICRAG:
             logging.exception("Failed to initialize Agentic RAG application.")
             raise CustomException(e, sys)
 
+    # Document Signature Management
     def _get_files_signature(self, uploaded_files):
         """
-        Generate a unique signature for uploaded documents.
+        Generate a signature for uploaded documents.
 
-        The signature is used to determine whether the uploaded
-        documents have changed and require re-indexing.
+        The signature helps identify whether uploaded files
+        have changed and require re-indexing.
+
+        Args:
+            uploaded_files: Uploaded PDF files.
+
+        Returns:
+            tuple: Document signature or None.
         """
         if not uploaded_files:
             return None
 
         return tuple(sorted((f.name, f.size) for f in uploaded_files))
 
-    def _needs_reindexing(self, uploaded_files):
+    def _needs_reindexing(self, uploaded_files) -> bool:
         """
         Determine whether uploaded documents require re-indexing.
 
@@ -101,25 +111,27 @@ class AGENTICRAG:
 
         return needs_update
 
+    # Main Application Workflow
     def run(self) -> None:
         """
         Execute the complete Agentic RAG workflow.
 
         Workflow:
             1. Display chat history.
-            2. Handle document uploads and indexing.
-            3. Build and display the workflow graph.
-            4. Process user queries through the Agentic RAG pipeline.
-            5. Render responses and tool usage
+            2. Handle document uploads.
+            3. Index uploaded documents.
+            4. Process user queries.
+            5. Display generated responses.
 
         Raises:
-            CustomException: Propagated from underlying components.
+            CustomException: If workflow execution fails.
         """
         try:
-            # Chat History
+            # Initialize chat history
             if "messages" not in st.session_state:
                 st.session_state["messages"] = []
 
+            # Display previous chat messages
             for message in st.session_state["messages"]:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
@@ -141,12 +153,11 @@ class AGENTICRAG:
 
             if uploaded_files and index_clicked:
                 if self._needs_reindexing(uploaded_files):
-                    self._run_ingestion_pipeline(uploaded_files, self._user_input)
+                    success = self._run_ingestion_pipeline(uploaded_files, self._user_input)
 
-                    st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
-
-            # Display compiled workflow graph in sidebar (once, before user query)
-            self._display_graph_in_sidebar()
+                    # Update signature only after successful indexing
+                    if success:
+                        st.session_state["_files_signature"] = self._get_files_signature(uploaded_files)
 
             # Process user query
             if self._user_query:
@@ -157,26 +168,30 @@ class AGENTICRAG:
             raise CustomException(e, sys)
 
     # RAG Ingestion Pipeline
-    def _run_ingestion_pipeline(self, uploaded_files, user_controls: dict) -> None:
+    def _run_ingestion_pipeline(self, uploaded_files, user_controls: dict) -> bool:
         """
         Execute the document ingestion pipeline.
 
         Steps:
-            1. Load PDF documents.
-            2. Generate embeddings.
-            3. Create Chroma vector store.
-            4. Configure retriever.
-            5. Store retriever in session state.
+            1. Prepare uploaded PDF files.
+            2. Send documents to FastAPI.
+            3. Generate embeddings in the backend.
+            4. Create and configure vector stores.
+            5. Configure the retriever.
 
         Args:
             uploaded_files: Uploaded PDF files.
             user_controls: User-selected configuration.
-        """
-        with st.sidebar.spinner("🔎 Processing PDFs document...."):
-            logging.info("Starting document ingestion pipeline.")
 
-            # Step 1: Load PDFs
-            try:
+        Returns:
+            bool: True if indexing succeeds, otherwise False.
+        """
+
+        try:
+            with st.sidebar.spinner("🔎 Processing PDFs document...."):
+                logging.info("Starting document ingestion pipeline.")
+                logging.info("Number of uploaded PDF files: %d", len(uploaded_files))
+
                 files_data = []
                 for uploaded_file in uploaded_files:
                     uploaded_file.seek(0)
@@ -185,75 +200,64 @@ class AGENTICRAG:
                         (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")
                     ))
 
-                # FastAPI receives ordinary multipart form data. The workspace
-                # identifier is a frontend routing key, not an authorization token.
+                ## Send documents to FastAPI backend
                 response = requests.post(
                     f"{FASTAPI_BASE_URL}/upload",
-                    files=files_data,
-                    data={
+                    files = files_data,
+                    data = {
                         "workspace_id": st.session_state["workspace_id"],
-                        "user_controls": json.dumps(user_controls),
+                        "user_controls": json.dumps(user_controls)
                     },
-                    timeout=600,
+                    timeout = 600
                 )
 
                 if response.status_code == 200:
                     result = response.json()
-                    st.success(
+                    st.sidebar.success(
                         f"✅ {result['message']} "
                         f"({result['pages_extracted']} pages from "
                         f"{len(result['files_processed'])} file(s))"
                     )
 
                     logging.info("Documents uploaded and indexed successfully.")
+                    return True
+
                 else:
                     error_detail = response.json().get("detail", "Unknown error")
                     st.error(f"❌ Upload failed: {error_detail}")
                     logging.error("Upload failed: %s", error_detail)
+                    return False
 
-            except Exception as e:
-                st.error(f"❌ Upload error: {str(e)}")
-                logging.exception("Upload to backend failed.")
-
-    def _display_graph_in_sidebar(self) -> None:
-        """
-        Fetch the compiled workflow graph image from backend and display it
-        in the Streamlit sidebar. Displays only once per session.
-        """
-        try:
-            if "graph_displayed" not in st.session_state:
-                response = requests.get(f"{FASTAPI_BASE_URL}/graph", timeout = 5)
-                if response.status_code == 200:
-                    graph_image_b64 = response.json().get("graph_image")
-                    if graph_image_b64:
-                        import base64
-                        graph_image_bytes = base64.b64decode(graph_image_b64)
-                        with st.sidebar:
-                            st.subheader("🔀 Workflow Graph")
-                            st.image(graph_image_bytes, caption = "Agentic RAG Workflow")
-                        st.session_state["graph_displayed"] = True
-                        logging.info("Workflow graph image displayed in sidebar.")
+        except requests.RequestException as e:
+                st.error(f"❌ Backend connection error: {str(e)}")
+                logging.exception("FastAPI backend connection failed during upload.")
+                return False
+        
         except Exception as e:
-            logging.warning("Unable to render workflow graph. Error: %s", str(e))
+                st.error(f"❌ Upload error: {str(e)}")
+                logging.exception("Document ingestion pipeline failed.")
+                return False
 
+     # Agentic RAG Query Workflow
     def _run_agent_workflow(self, user_query: str) -> None:
         """
         Execute the Agentic RAG workflow for a user query.
 
-        The workflow may:
-            - Generate a direct LLM response.
-            - Invoke a retriever tool.
-            - Invoke external knowledge tools.
-            - Return source attribution information.
+        Workflow:
+            1. Capture user question.
+            2. Send query to FastAPI backend.
+            3. Execute the LangGraph workflow in the backend.
+            4. Receive the generated answer.
+            5. Display and store the response.
 
         Args:
-            user_query (str): User question submitted through the chat interface.
-            graph: Compiled LangGraph workflow.
+            user_query (str): User question.
 
         Raises:
             CustomException: If workflow execution fails.
         """
 
+        # Store user message in chat history
         st.session_state["messages"].append({"role" : "user", "content" : user_query})
 
         with st.chat_message("user"):
@@ -261,7 +265,8 @@ class AGENTICRAG:
 
         response = None
         formatted_response = None
-        # Get response from backend
+
+        # Get Response from FastAPI Backend
         with st.chat_message("assistant"):
             with st.spinner("🔍 Searching & generating answer..."):
                 try:
@@ -270,12 +275,12 @@ class AGENTICRAG:
                     user_controls = st.session_state.get("user_controls", {})
                     response = requests.post(
                         f"{FASTAPI_BASE_URL}/query",
-                        json={
+                        json = {
                             "question": user_query,
                             "workspace_id": st.session_state["workspace_id"],
-                            "user_controls": user_controls,
+                            "user_controls": user_controls
                         },
-                        timeout=180,
+                        timeout = 180
                     )
 
                     if response.status_code == 200:
@@ -283,6 +288,7 @@ class AGENTICRAG:
                         answer = result.get("answer", "No response generated.")
                         tool_used = result.get("tool_used")
 
+                        # Format final response
                         if tool_used:
                             formatted_response = (
                                 f"{answer}\n\n"
@@ -292,18 +298,20 @@ class AGENTICRAG:
                             formatted_response = answer
 
                         st.markdown(formatted_response)
-
+                        logging.info("Final response received successfully.")
                     else:
                         error_detail = response.json().get("detail", "Unknown error")
                         st.error(f"❌ Query failed: {error_detail}")
+                        logging.error("Query failed with status code %d: %s", response.status_code, error_detail)
 
-                    logging.info("Agentic RAG response generated successfully.")
+                except requests.RequestException as e:
+                    logging.exception( "FastAPI backend connection failed during query.")
+                    st.error(f"❌ Backend connection error: {str(e)}")
 
                 except Exception as e:
                     logging.exception("Query to backend failed.")
                     st.error(f"❌ Error: {str(e)}")
 
+        # Save Assistant Response in Chat History
         if formatted_response:
-            history_content = formatted_response
-
-            st.session_state["messages"].append({"role" : "assistant", "content" : history_content})
+            st.session_state["messages"].append({"role" : "assistant", "content" : formatted_response})

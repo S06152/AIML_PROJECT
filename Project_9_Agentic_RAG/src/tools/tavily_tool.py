@@ -33,10 +33,7 @@ class TavilySearchTool:
             tavily_api_key = os.getenv("TAVILY_API_KEY")
 
             if not tavily_api_key:
-                raise ValueError(
-                    "TAVILY_API_KEY is missing. Configure it in the "
-                    "FastAPI backend environment."
-                )
+                raise ValueError("TAVILY_API_KEY is missing. Configure it in the FastAPI backend environment.")
 
             self._tavily_tool = TavilySearchResults(
                 tavily_api_key = tavily_api_key,
@@ -85,9 +82,7 @@ class TavilySearchTool:
                 if not query or not query.strip():
                     return "Please provide a non-empty search query."
 
-                logging.info(
-                    "tavily_web_search invoked | Query = '%s'", query
-                )
+                logging.info("tavily_web_search invoked | Query = '%s'", query)
 
                 results = tavily.invoke({"query": query.strip()})
 

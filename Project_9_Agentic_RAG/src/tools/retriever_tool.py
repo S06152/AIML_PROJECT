@@ -15,7 +15,7 @@ class RetrieverTool:
         - Expose a LangChain tool for tool-calling agents.
     """
 
-    def __init__(self, vector_store=None, top_k: int = 5):
+    def __init__(self, vector_store = None, top_k: int = 5):
         """
         Initialize RetrieverTool.
 
@@ -62,7 +62,7 @@ class RetrieverTool:
             raise CustomException(e, sys)
 
     @staticmethod
-    def get_tool(retriever=None):
+    def get_tool(retriever = None):
         """
         Create LangChain retriever tool.
 

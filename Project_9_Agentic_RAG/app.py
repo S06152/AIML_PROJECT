@@ -71,13 +71,13 @@ def _ensure_backend_running():
 
         # Wait until backend is ready
         for i in range(30):
-            time.sleep(0.5)
-
             if _is_backend_running():
-                logging.info("FastAPI backend is ready (took ~%.1f seconds).", (i + 1) * 0.5)
+                logging.info("FastAPI backend is ready (took approximately %.1f seconds).", (i + 1) * 0.5)
                 return
 
-        logging.warning("FastAPI backend did not respond within the expected time.")
+            time.sleep(0.5)
+
+        raise RuntimeError("FastAPI backend failed to start within 15 seconds.")
 
     except Exception as e:
         logging.exception("Error while ensuring backend is running.")
@@ -101,19 +101,3 @@ if __name__ == "__main__":
     except Exception as e:
         logging.exception("Application failed to start")
         raise CustomException(e, sys)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

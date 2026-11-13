@@ -47,10 +47,8 @@ class PDFLoader:
             logging.info("Initializing PDFLoader.")
 
             if uploaded_file.type != "application/pdf":
-                logging.error("Rejected non-PDF file: type=%s", uploaded_file.type)
-                raise ValueError(
-                    f"Unsupported file type '{uploaded_file.type}'. Only PDF files are accepted."
-                )
+                logging.error("Rejected non-PDF file: type = %s", uploaded_file.type)
+                raise ValueError(f"Unsupported file type '{uploaded_file.type}'. Only PDF files are accepted.")
 
             self._uploaded_file = uploaded_file
             logging.info("PDF file accepted")

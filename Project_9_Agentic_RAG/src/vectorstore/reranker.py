@@ -1,10 +1,11 @@
+import sys
 from typing import List
-
 from sentence_transformers import CrossEncoder
 from langchain_core.documents import Document
-
 from src.utils.logger import logging
-
+from src.utils.exception import CustomException
+import warnings
+warnings.filterwarnings("ignore")
 
 class DocumentReranker:
     """
@@ -17,70 +18,67 @@ class DocumentReranker:
     4. Return the final top-K documents.
     """
 
-    def __init__(
-        self,
-        model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        top_k: int = 5
-    ):
-        self.top_k = top_k
+    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2", top_k : int = 5) -> None:
+        try:
+            if top_k <= 0:
+                raise ValueError("top_k must be greater than zero.")
 
-        logging.info("Loading reranker model: %s", model_name)
+            self.top_k = top_k
 
-        self.model = CrossEncoder(model_name)
+            logging.info("Loading reranker model: %s", model_name)
 
-    def rerank(
-        self,
-        query: str,
-        documents: List[Document]
-    ) -> List[Document]:
+            self.model = CrossEncoder(model_name)
 
-        if not documents:
-            return []
+            logging.info("Cross-Encoder reranker initialized successfully.")
 
-        print("\n========== 3. RETRIEVED DOCUMENTS (BEFORE RERANKING) ==========")
+        except Exception as e:
+            logging.exception("Failed to initialize document reranker.")
+            raise CustomException(e, sys)
 
-        for i, doc in enumerate(documents, 1):
-            print(f"\nDocument {i}:")
-            print(doc.page_content)
-            print("Metadata:", doc.metadata)
+    def rerank(self, query : str, documents : List[Document]) -> List[Document]:
+        try:
+            if not query or not query.strip():
+                logging.warning("Empty query received for reranking.")
+                return []
 
-        # Create query-document pairs
-        pairs = [
-            (query, doc.page_content)
-            for doc in documents
-        ]
+            if not documents:
+                logging.warning("No documents available for reranking.")
+                return []
 
-        # Calculate relevance scores
-        scores = self.model.predict(pairs)
+            logging.info("Starting reranking for %d candidate documents.", len(documents))
 
-        # Attach scores to documents
-        ranked_documents = sorted(
-            zip(documents, scores),
-            key=lambda item: float(item[1]),
-            reverse=True
-        )
+            # Create query-document pairs
+            pairs = [(query, doc.page_content) for doc in documents]
 
-        # Return final top-K documents
-        final_documents = []
+            # Calculate relevance scores
+            scores = self.model.predict(pairs)
 
-        for doc, score in ranked_documents[:self.top_k]:
+            # Attach scores and sort documents
+            ranked_documents = sorted(
+                zip(documents, scores),
+                key = lambda item: float(item[1]),
+                reverse = True
+            )
 
-            doc.metadata["rerank_score"] = float(score)
+            # Return final top-K documents
+            final_documents = []
 
-            final_documents.append(doc)
-        
-        print("\n========== 4. RERANKED DOCUMENTS (AFTER RERANKING) ==========")
+            for doc, score in ranked_documents[:self.top_k]:
+                # Copy metadata to avoid modifying the original document
+                reranked_doc = Document(
+                    page_content = doc.page_content,
+                    metadata = {
+                        **doc.metadata,
+                        "rerank_score": float(score)
+                    }
+                )
 
-        for i, doc in enumerate(final_documents, 1):
-            print(f"\nDocument {i}:")
-            print("Rerank Score:", doc.metadata.get("rerank_score"))
-            print(doc.page_content)
-            print("Metadata:", doc.metadata)
+                final_documents.append(reranked_doc)
 
-        logging.info(
-            "Reranking completed: %d candidates -> %d documents",
-            len(documents),
-            len(final_documents)
-        )
+            logging.info("Reranking completed: %d candidates -> %d documents.", len(documents), len(final_documents))
 
-        return final_documents
+            return final_documents
+
+        except Exception as e:
+            logging.exception("Document reranking failed.")
+            raise CustomException(e, sys)

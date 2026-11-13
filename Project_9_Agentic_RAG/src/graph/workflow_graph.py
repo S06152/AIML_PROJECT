@@ -7,7 +7,6 @@ from langgraph.graph import StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
 from src.agents.agents import Agent
 from src.models.state import State
-
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -26,7 +25,7 @@ class GraphBuilder:
         try:
             logging.info("Initializing GraphBuilder.")
 
-            self._tool_call = Agent(retriever=retriever)
+            self._tool_call = Agent(retriever = retriever)
             self._compiled_graph: Optional[Any] = None
 
             logging.info("GraphBuilder initialized successfully.")
@@ -87,13 +86,14 @@ class GraphBuilder:
             logging.info("Starting workflow execution | Query = '%s'", query )
 
             initial_state = {
-                "messages": [HumanMessage(content=query)],
+                "messages": [HumanMessage(content = query)],
                 "question": query,
+                "rewritten_queries": [],
                 "user_controls": user_controls or {}
             }
 
             final_state = graph.invoke(initial_state)
-            messages = final_state.get("messages",[])
+            messages = final_state.get("messages", [])
 
             tool_name = self._extract_tool_name(messages)
             response = self._extract_final_response( messages)
@@ -129,7 +129,7 @@ class GraphBuilder:
 
         for msg in reversed(messages):
             if isinstance(msg, AIMessage):
-                if (hasattr(msg, "tool_calls")and msg.tool_calls):
+                if (hasattr(msg, "tool_calls") and msg.tool_calls):
                     continue
 
                 return msg.content

@@ -11,10 +11,11 @@ class State(TypedDict):
         messages: Complete conversation history including
                   HumanMessage, AIMessage, and ToolMessage.
         question: Original user query.
+        rewritten_queries: Rewritten or expanded search queries.
         user_controls: User configuration settings (LLM model, API keys, etc.)
     """
 
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: Annotated[List[AnyMessage], add_messages]
     question: str
     rewritten_queries: List[str]
     user_controls: dict

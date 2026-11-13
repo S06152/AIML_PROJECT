@@ -217,16 +217,13 @@ class Agent:
             except Exception as tool_error:
                 error_str = str(tool_error)
                 if "tool_use_failed" in error_str or "Failed to call a function" in error_str:
-                    logging.warning(
-                        "Tool-bound invocation failed (model chose direct response). "
-                        "Retrying without tools."
-                    )
+                    logging.warning("Tool-bound invocation failed (model chose direct response).Retrying without tools.")
                     base_llm = self._get_base_llm(user_controls)
                     response = base_llm.invoke(final_messages)
                 else:
                     raise
 
-            return {"messages": [response] }
+            return {"messages" : [response] }
 
         except Exception as e:
             logging.exception("Error during Agent execution.")
